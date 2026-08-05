@@ -247,6 +247,11 @@ attach_side = "below" # above | below
 `tui.status_line`，但修改前必须展示 diff、创建可恢复备份并获得明确确认；卸载时只在
 用户未自行修改该值的情况下恢复。Codexline 不得静默编辑 Codex 配置。
 
+检测必须遵循 Codex 的公开配置优先级：CLI override、受信任项目配置、profile、用户
+配置、系统配置、内置默认。Codexline 不读取私有 trust state；项目层是否生效无法从
+公开配置确定时返回 `unknown`。`attached` 不得在检测为 `enabled` 或 `unknown` 时
+静默覆盖原生 footer，必须提示、获得确认或回退 `bottom`。
+
 ### 7.1 终端所有权
 
 Renderer 不解析 Codex 文本内容，只进行有限的 ECMA-48 模式观察：alternate

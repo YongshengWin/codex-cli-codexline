@@ -1,5 +1,6 @@
 mod cli;
 mod config;
+mod native_status;
 mod process;
 mod render;
 

@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 
 use crate::config::{self, Config, LaunchMode};
+use crate::native_status;
 use crate::process::{self, LaunchRequest};
 use crate::render;
 
@@ -114,6 +115,8 @@ fn doctor() -> Result<i32> {
         println!("  overlay: available");
     }
     println!("  backend: {}", process::backend_name());
+    let native = native_status::detect(&[]);
+    println!("  native status line: {} ({})", native.state, native.source);
     Ok(0)
 }
 
@@ -140,8 +143,10 @@ fn configure() -> Result<i32> {
 
     let official = process::discover_codex().ok();
     let shim = config::suggested_shim_path()?;
+    let native = native_status::detect(&[]);
     println!("\nDry run");
     println!("  mode: {}", config.launch.mode);
+    println!("  native status line: {} ({})", native.state, native.source);
     println!(
         "  official Codex: {}",
         official

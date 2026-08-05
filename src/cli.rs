@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 
@@ -151,6 +151,14 @@ fn configure() -> Result<i32> {
     match config.launch.mode {
         LaunchMode::Shim => {
             println!("  planned shim: {}", shim.display());
+            if official.as_ref().is_some_and(|path| path == &shim) {
+                anyhow::bail!(
+                    "planned shim conflicts with the official Codex binary; no changes were saved"
+                );
+            }
+            if let Some(directory) = shim.parent() {
+                println!("  PATH requirement: prepend {}", directory.display());
+            }
             println!("  bypass: codex --no-companion");
             println!("  system changes: none in this development build");
         }
@@ -166,7 +174,9 @@ fn configure() -> Result<i32> {
         return Ok(0);
     }
     config.save_atomic()?;
-    println!("Saved. Run `codexline preview` to inspect the status line.");
+    let executable = std::env::current_exe().context("could not resolve the Codexline binary")?;
+    println!("Saved launch preference; no shim was installed.");
+    println!("Preview with: {} preview", executable.display());
     Ok(0)
 }
 

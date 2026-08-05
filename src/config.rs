@@ -169,8 +169,13 @@ pub fn suggested_shim_path() -> Result<PathBuf> {
     }
     #[cfg(not(windows))]
     {
-        let home = directories::BaseDirs::new().context("could not resolve home directory")?;
-        Ok(home.home_dir().join(".local/bin/codex"))
+        let data_home = if let Some(directory) = std::env::var_os("XDG_DATA_HOME") {
+            PathBuf::from(directory)
+        } else {
+            let home = directories::BaseDirs::new().context("could not resolve home directory")?;
+            home.home_dir().join(".local/share")
+        };
+        Ok(data_home.join("codexline/bin/codex"))
     }
 }
 
@@ -192,5 +197,13 @@ mod tests {
             ..Config::default()
         };
         assert!(config.validate().is_err());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn shim_uses_a_codexline_owned_directory() {
+        let path = super::suggested_shim_path().unwrap();
+        assert!(path.ends_with("codexline/bin/codex"));
+        assert!(!path.ends_with(".local/bin/codex"));
     }
 }

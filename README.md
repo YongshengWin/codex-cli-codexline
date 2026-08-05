@@ -161,15 +161,16 @@ The prototype bottom dock supports configurable segment order and visibility in
 theme = "codex-dark"
 glyphs = "unicode"
 refresh_hz = 8
+rows = 3
 segments = [
-  "app", "model", "work", "context", "git", "agents", "plan",
+  "app", "model", "work", "context", "git", "worktree", "agents", "plan",
   "safety", "elapsed", "cwd"
 ]
 separator = " │ "
 ```
 
-Available segments are `app`, `model`, `work`, `context`, `git`, `agents`,
-`plan`, `safety`, `elapsed`, `cwd`, and `status`. Remove a name to hide it or
+Available segments are `app`, `model`, `work`, `context`, `git`, `worktree`,
+`agents`, `plan`, `safety`, `elapsed`, `cwd`, and `status`. Remove a name to hide it or
 reorder the array to move it. `preview` uses clearly labelled simulated state
 to demonstrate the complete responsive layout. Live rendering currently fills
 model/reasoning, ready state, Git, safety, elapsed time, and directory from
@@ -237,13 +238,13 @@ flowchart LR
     State --> Companion
 ```
 
-If the real terminal has 40 rows, Codexline gives Codex a 39-row child
-PTY/ConPTY and owns the final row:
+If the real terminal has 40 rows and the Full preset reserves three lanes,
+Codexline gives Codex a 37-row child PTY/ConPTY and owns the final three rows:
 
 ```text
 Real terminal: 120 × 40
-├─ Official Codex child terminal: 120 × 39
-└─ Codexline status row:             row 40
+├─ Official Codex child terminal: 120 × 37
+└─ Codexline HUD lanes:              rows 38–40
 ```
 
 Codex output is forwarded as bytes. The relay does not wait for Git, JSON,

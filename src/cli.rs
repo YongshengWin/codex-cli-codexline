@@ -93,7 +93,7 @@ fn preview(width: Option<u16>) -> Result<i32> {
         .or_else(|| crossterm::terminal::size().ok().map(|(columns, _)| columns))
         .unwrap_or(100);
     println!("Simulated rich preview (unknown live data is hidden):");
-    println!("{}", render::preview_line(width, &config.display));
+    println!("{}", render::preview_ansi(width, &config.display)?);
     Ok(0)
 }
 
@@ -147,17 +147,25 @@ fn configure() -> Result<i32> {
     };
 
     println!("\nCodexline setup · Preset (2/5)\n");
-    println!("  1  Full      Model, work, context, Git, agents, plan, safety, and local state");
+    println!("  1  Full      Three lanes: session, workspace/worktree, and live activity");
     println!("  2  Focus     Model, work, context, Git, and elapsed");
     println!("  3  Minimal   Work, context, and Git");
     println!("  4  Custom    Keep the current module selection");
     let preset_default = preset_number(&config.display.segments);
     let preset = prompt(&format!("Choose [{preset_default}]: "))?;
-    config.display.segments = match if preset.is_empty() {
+    let preset = if preset.is_empty() {
         preset_default
     } else {
         preset.as_str()
-    } {
+    };
+    config.display.rows = match preset {
+        "1" => 3,
+        "2" => 2,
+        "3" => 1,
+        "4" => config.display.rows,
+        _ => anyhow::bail!("expected 1, 2, 3, or 4; no changes were saved"),
+    };
+    config.display.segments = match preset {
         "1" => full_segments(),
         "2" => vec![
             Segment::App,
@@ -165,6 +173,7 @@ fn configure() -> Result<i32> {
             Segment::Work,
             Segment::Context,
             Segment::Git,
+            Segment::Worktree,
             Segment::Elapsed,
         ],
         "3" => vec![Segment::Work, Segment::Context, Segment::Git],
@@ -219,9 +228,9 @@ fn configure() -> Result<i32> {
     let native = native_status::detect(&[]);
     println!("\nCodexline setup · Review (5/5)\n");
     println!("Wide preview:");
-    println!("{}", render::preview_line(88, &config.display).trim_end());
+    println!("{}", render::preview_ansi(88, &config.display)?.trim_end());
     println!("Narrow preview:");
-    println!("{}", render::preview_line(48, &config.display).trim_end());
+    println!("{}", render::preview_ansi(48, &config.display)?.trim_end());
     println!("\nDry run");
     println!("  mode: {}", config.launch.mode);
     println!("  native status line: {} ({})", native.state, native.source);
@@ -275,6 +284,7 @@ fn full_segments() -> Vec<Segment> {
         Segment::Work,
         Segment::Context,
         Segment::Git,
+        Segment::Worktree,
         Segment::Agents,
         Segment::Plan,
         Segment::Safety,
@@ -293,6 +303,7 @@ fn preset_number(segments: &[Segment]) -> &'static str {
             Segment::Work,
             Segment::Context,
             Segment::Git,
+            Segment::Worktree,
             Segment::Elapsed,
         ]
     {
@@ -315,19 +326,28 @@ fn print_module_choices(selected: &[Segment]) {
     }
 }
 
-fn module_choices() -> [(u8, Segment, &'static str); 11] {
+fn module_choices() -> [(u8, Segment, &'static str); 12] {
     [
         (1, Segment::App, "App       Codex identity"),
         (2, Segment::Model, "Model     Model and reasoning"),
         (3, Segment::Work, "Work      Turn phase and active tool"),
         (4, Segment::Context, "Context   Context pressure"),
         (5, Segment::Git, "Git       Branch and dirty state"),
-        (6, Segment::Agents, "Agents    Active and total subagents"),
-        (7, Segment::Plan, "Plan      Current plan progress"),
-        (8, Segment::Safety, "Safety    Sandbox and approval mode"),
-        (9, Segment::Elapsed, "Elapsed   Session timer"),
-        (10, Segment::Cwd, "Directory Current workspace"),
-        (11, Segment::Status, "Status    Companion health"),
+        (
+            6,
+            Segment::Worktree,
+            "Worktree  Name and linked-worktree state",
+        ),
+        (
+            7,
+            Segment::Agents,
+            "Agents    Roles, state, and elapsed time",
+        ),
+        (8, Segment::Plan, "Plan      Current plan progress"),
+        (9, Segment::Safety, "Safety    Sandbox and approval mode"),
+        (10, Segment::Elapsed, "Elapsed   Session timer"),
+        (11, Segment::Cwd, "Directory Current workspace"),
+        (12, Segment::Status, "Status    Companion health"),
     ]
 }
 
@@ -375,7 +395,7 @@ mod tests {
     fn presets_and_module_toggles_are_deterministic() {
         let mut segments = vec![Segment::Work, Segment::Context, Segment::Git];
         assert_eq!(preset_number(&segments), "3");
-        toggle_segments(&mut segments, "4 10").unwrap();
+        toggle_segments(&mut segments, "4 11").unwrap();
         assert_eq!(segments, [Segment::Work, Segment::Git, Segment::Cwd]);
         assert_eq!(preset_number(&segments), "4");
     }

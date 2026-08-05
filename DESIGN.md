@@ -206,6 +206,35 @@ watcher 只用来使缓存失效，不能触发高频完整 `git status`。
 
 任何字段都允许未知。Renderer 对缺失字段隐藏 segment，不能显示误导性的零值。
 
+### 6.1 Statusline 能力分层（2026-08 调研）
+
+Codex 原生 footer 已经覆盖 model/reasoning、cwd/project、Git branch、PR、branch
+changes、run state、permissions/approval、context used/remaining/window、5h/weekly
+limits、token totals、session/thread、Fast/Raw mode、thread title、workspace headline 和
+task progress。Codexline 不应简单复制这些字段，而应把多个稳定来源合成一个可响应式
+布局的 HUD。
+
+| 数据层 | 可提供的信息 | 稳定性与策略 |
+| --- | --- | --- |
+| 本地探针 | cwd/project、Git staged/modified/untracked、ahead/behind、stash、linked worktree、其他 worktree、会话耗时、Codexline/Codex 版本 | 默认启用；后台缓存、超时、绝不阻塞 PTY relay |
+| Codex Hooks | session、当前 model/cwd、tool start/stop、permission waiting、compact、subagent start/stop、prompt/stop | 默认增强层；事件写入本会话私有 IPC，不解析屏幕 |
+| Codex app-server | thread/turn 状态、items、plan、diff、token usage、rate limits、title、background terminals、approval requests | 权威但属于 custom-client 协议；作为高级后端，不能假装可附着到任意已运行 TUI |
+| 派生指标 | tool/agent elapsed、token speed、context burn rate、最近错误、变更速率、idle time | 只由权威或稳定输入计算，并标记 estimated/derived |
+| 可选集成 | GitHub PR/CI/review、Jujutsu、跨 Codexline 会话/跨 worktree 活动 | 显式启用、独立 TTL；网络与外部 CLI 永不进入渲染热路径 |
+
+推荐模块全集：
+
+- Session：model/provider、reasoning、Fast mode、run state、session/turn elapsed、thread title。
+- Capacity：context bar/tokens、5h/weekly limits 与 reset、input/cached/output、compaction count。
+- Workspace：project/cwd、Git branch、staged/modified/untracked、ahead/behind、stash、PR/CI、worktree 名称与总数。
+- Activity：当前 tool、最近完成 tools、skills/MCP、active agents（type/state/elapsed）、plan/todo、background terminals。
+- Safety：sandbox/permission profile、approval mode、等待审批/等待用户输入、降级数据源告警。
+- Fleet：本机其他 Codexline 会话、每个 worktree 的 agent/branch/dirty/blocked 状态；这是 Codexline 相比单会话 HUD 的核心差异化能力。
+
+默认不展示系统 RAM/CPU/电量，不从认证文件抓限额，不把估算成本伪装成账单，也不把
+Codex TUI 屏幕文本或 session transcript 当作稳定 API。它们可以成为显式 opt-in
+诊断模块，但不能是 Full preset 的核心数据源。
+
 ## 7. Renderer
 
 Codexline 的 renderer 是独立产品界面，不模仿 Codex 原生 footer。默认设计必须满足：
@@ -282,10 +311,12 @@ spinner、时钟和耗时启用时才使用定时器。
 布局先保留高优先级 segment，再按可用宽度展开。宽度使用 Unicode grapheme 和
 East Asian Width 计算，不能用字符串字节数。
 
-建议默认布局：
+建议 Full 默认布局分为三条稳定语义泳道：
 
 ```text
- Codex gpt-5.6-sol high | ⟳ exec 8s | ctx ▓▓░░░ 42% | ↑2 agents |  feat/statusline *
+ ● Codex | gpt-5.6-sol high | exec 8s | 41s
+ git:(feat/statusline*) S1 M3 ↑2 | wt:codexline-agent-2 ↗ | codex-cli-statusline
+ ctx ███░░ 42% | ↑2/3 agents | 2/4 plan | workspace · ask
 ```
 
 窄终端自动压缩为：

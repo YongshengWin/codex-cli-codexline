@@ -138,7 +138,8 @@ fn prepare_pty(
     let (columns, rows) = crossterm::terminal::size()
         .context("could not read terminal size")
         .map_err(before)?;
-    let child_rows = rows.saturating_sub(1);
+    let reserved_rows = u16::from(display.rows);
+    let child_rows = rows.saturating_sub(reserved_rows);
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: child_rows,
@@ -150,7 +151,7 @@ fn prepare_pty(
         .map_err(before)?;
 
     // Enter raw mode before spawning so any failure here is safe to fall back from.
-    let terminal = TerminalGuard::enter(child_rows).map_err(before)?;
+    let terminal = TerminalGuard::enter(child_rows, reserved_rows).map_err(before)?;
 
     let mut command = CommandBuilder::new(executable);
     command.args(args);
@@ -237,14 +238,14 @@ fn prepare_pty(
             last_size = size;
             pair.master
                 .resize(PtySize {
-                    rows: size.1.saturating_sub(1),
+                    rows: size.1.saturating_sub(reserved_rows),
                     cols: size.0,
                     pixel_width: 0,
                     pixel_height: 0,
                 })
                 .map_err(after)?;
             terminal
-                .update_reserved_rows(size.1.saturating_sub(1))
+                .update_reserved_rows(size.1.saturating_sub(reserved_rows), reserved_rows)
                 .map_err(after)?;
         }
         if last_draw.elapsed() >= Duration::from_secs(1) {

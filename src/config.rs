@@ -64,6 +64,7 @@ pub struct DisplayConfig {
     pub theme: Theme,
     pub glyphs: Glyphs,
     pub refresh_hz: u8,
+    pub rows: u8,
     pub segments: Vec<Segment>,
     pub separator: String,
 }
@@ -74,12 +75,14 @@ impl Default for DisplayConfig {
             theme: Theme::CodexDark,
             glyphs: Glyphs::Unicode,
             refresh_hz: 8,
+            rows: 3,
             segments: vec![
                 Segment::App,
                 Segment::Model,
                 Segment::Work,
                 Segment::Context,
                 Segment::Git,
+                Segment::Worktree,
                 Segment::Agents,
                 Segment::Plan,
                 Segment::Safety,
@@ -99,6 +102,7 @@ pub enum Segment {
     Work,
     Context,
     Git,
+    Worktree,
     Agents,
     Plan,
     Safety,
@@ -148,6 +152,10 @@ impl Config {
         anyhow::ensure!(
             (1..=20).contains(&self.display.refresh_hz),
             "display.refresh_hz must be between 1 and 20"
+        );
+        anyhow::ensure!(
+            (1..=3).contains(&self.display.rows),
+            "display.rows must be between 1 and 3"
         );
         anyhow::ensure!(
             !self.display.segments.is_empty(),

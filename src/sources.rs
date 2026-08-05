@@ -10,13 +10,19 @@ use crate::state::StatusSnapshot;
 pub fn local_snapshot(codex_args: &[String]) -> StatusSnapshot {
     let config = read_codex_config();
     let (model, reasoning, safety) = local_codex_settings(codex_args, config.as_ref());
-    let (git_branch, git_dirty) = git_status();
+    let git = git_status();
     StatusSnapshot {
         model,
         reasoning,
         work: Some("ready".into()),
-        git_branch,
-        git_dirty,
+        git_branch: git.branch,
+        git_dirty: git.dirty,
+        git_staged: git.staged,
+        git_modified: git.modified,
+        git_ahead: git.ahead,
+        git_behind: git.behind,
+        worktree: git.worktree,
+        linked_worktree: git.linked_worktree,
         safety,
         ..StatusSnapshot::default()
     }
@@ -83,17 +89,85 @@ fn compact_safety(value: &str) -> String {
     }
 }
 
-fn git_status() -> (Option<String>, Option<bool>) {
+#[derive(Default)]
+struct LocalGit {
+    branch: Option<String>,
+    dirty: Option<bool>,
+    staged: Option<u16>,
+    modified: Option<u16>,
+    ahead: Option<u16>,
+    behind: Option<u16>,
+    worktree: Option<String>,
+    linked_worktree: Option<bool>,
+}
+
+fn git_status() -> LocalGit {
     let branch = run_git(&["rev-parse", "--abbrev-ref", "HEAD"])
         .filter(|(success, _)| *success)
         .map(|(_, output)| output);
     if branch.is_none() {
-        return (None, None);
+        return LocalGit::default();
     }
-    let dirty = run_git(&["status", "--porcelain", "--untracked-files=no"])
+    let porcelain = run_git(&["status", "--porcelain", "--untracked-files=no"])
         .filter(|(success, _)| *success)
-        .map(|(_, output)| !output.is_empty());
-    (branch, dirty)
+        .map(|(_, output)| output);
+    let staged = porcelain.as_ref().map(|output| {
+        bounded_count(output.lines().filter(|line| {
+            line.as_bytes()
+                .first()
+                .is_some_and(|value| *value != b' ' && *value != b'?')
+        }))
+    });
+    let modified = porcelain.as_ref().map(|output| {
+        bounded_count(
+            output
+                .lines()
+                .filter(|line| line.as_bytes().get(1).is_some_and(|value| *value != b' ')),
+        )
+    });
+    let (behind, ahead) = run_git(&["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+        .filter(|(success, _)| *success)
+        .and_then(|(_, output)| {
+            let mut values = output
+                .split_whitespace()
+                .filter_map(|value| value.parse().ok());
+            Some((values.next()?, values.next()?))
+        })
+        .map_or((None, None), |(behind, ahead)| (Some(behind), Some(ahead)));
+    let root = run_git(&["rev-parse", "--show-toplevel"])
+        .filter(|(success, _)| *success)
+        .map(|(_, output)| PathBuf::from(output));
+    let git_dir = run_git(&["rev-parse", "--absolute-git-dir"])
+        .filter(|(success, _)| *success)
+        .map(|(_, output)| PathBuf::from(output));
+    let common_dir = run_git(&["rev-parse", "--git-common-dir"])
+        .filter(|(success, _)| *success)
+        .map(|(_, output)| PathBuf::from(output));
+    let linked_worktree = match (&git_dir, &common_dir) {
+        (Some(git_dir), Some(common_dir)) => Some(
+            fs::canonicalize(git_dir).unwrap_or_else(|_| git_dir.clone())
+                != fs::canonicalize(common_dir).unwrap_or_else(|_| common_dir.clone()),
+        ),
+        _ => None,
+    };
+    let worktree = root.and_then(|path| {
+        path.file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+    });
+    LocalGit {
+        branch,
+        dirty: porcelain.as_ref().map(|output| !output.is_empty()),
+        staged,
+        modified,
+        ahead,
+        behind,
+        worktree,
+        linked_worktree,
+    }
+}
+
+fn bounded_count<'a>(items: impl Iterator<Item = &'a str>) -> u16 {
+    items.take(usize::from(u16::MAX)).count() as u16
 }
 
 fn run_git(args: &[&str]) -> Option<(bool, String)> {

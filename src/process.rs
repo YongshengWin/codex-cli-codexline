@@ -13,6 +13,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use crate::config::DisplayConfig;
 use crate::render::{StatusRenderer, TerminalGuard};
+use crate::state::StatusSnapshot;
 
 #[derive(Debug, Clone, Copy)]
 pub enum BypassReason {
@@ -42,6 +43,7 @@ pub struct LaunchRequest {
     pub args: Vec<String>,
     pub bypass: Option<BypassReason>,
     pub display: DisplayConfig,
+    pub snapshot: StatusSnapshot,
 }
 
 pub fn bypass_reason(explicit: bool) -> Option<BypassReason> {
@@ -74,7 +76,12 @@ pub fn launch(request: LaunchRequest) -> Result<i32> {
             request.bypass.or(Some(BypassReason::ExecSubcommand)),
         );
     }
-    match launch_pty(&request.executable, &request.args, &request.display) {
+    match launch_pty(
+        &request.executable,
+        &request.args,
+        &request.display,
+        request.snapshot,
+    ) {
         PtyOutcome::Complete(code) => Ok(code),
         PtyOutcome::Unavailable(error) => {
             eprintln!("codexline: overlay unavailable ({error}); starting Codex directly");
@@ -107,8 +114,13 @@ fn launch_direct(executable: &Path, args: &[String], _reason: Option<BypassReaso
     }
 }
 
-fn launch_pty(executable: &Path, args: &[String], display: &DisplayConfig) -> PtyOutcome {
-    match prepare_pty(executable, args, display) {
+fn launch_pty(
+    executable: &Path,
+    args: &[String],
+    display: &DisplayConfig,
+    snapshot: StatusSnapshot,
+) -> PtyOutcome {
+    match prepare_pty(executable, args, display, snapshot) {
         Ok(code) => PtyOutcome::Complete(code),
         Err((false, error)) => PtyOutcome::Unavailable(error),
         Err((true, error)) => PtyOutcome::StartedFailure(error),
@@ -119,6 +131,7 @@ fn prepare_pty(
     executable: &Path,
     args: &[String],
     display: &DisplayConfig,
+    snapshot: StatusSnapshot,
 ) -> std::result::Result<i32, (bool, anyhow::Error)> {
     let before = |error| (false, error);
     let after = |error| (true, error);
@@ -191,7 +204,7 @@ fn prepare_pty(
         }
     });
     let mut stdout = io::stdout().lock();
-    let mut renderer = StatusRenderer::new(display.clone());
+    let mut renderer = StatusRenderer::new(display.clone(), snapshot);
     renderer.draw(&mut stdout, columns, rows).map_err(after)?;
     let mut last_size = (columns, rows);
     let mut last_draw = std::time::Instant::now();

@@ -161,13 +161,20 @@ The prototype bottom dock supports configurable segment order and visibility in
 theme = "codex-dark"
 glyphs = "unicode"
 refresh_hz = 8
-segments = ["app", "elapsed", "cwd", "status"]
+segments = [
+  "app", "model", "work", "context", "git", "agents", "plan",
+  "safety", "elapsed", "cwd"
+]
 separator = " │ "
 ```
 
-Available M1 segments are `app`, `elapsed`, `cwd`, and `status`. Remove a name
-to hide it or reorder the array to move it. Rich live-state modules arrive with
-the shared state engine rather than being inferred from terminal text.
+Available segments are `app`, `model`, `work`, `context`, `git`, `agents`,
+`plan`, `safety`, `elapsed`, `cwd`, and `status`. Remove a name to hide it or
+reorder the array to move it. `preview` uses clearly labelled simulated state
+to demonstrate the complete responsive layout. Live rendering currently fills
+model/reasoning, ready state, Git, safety, elapsed time, and directory from
+local supported sources; unavailable context/agent/plan fields are hidden
+rather than invented.
 
 Planned commands and extensions:
 

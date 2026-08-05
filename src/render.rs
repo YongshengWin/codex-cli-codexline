@@ -6,6 +6,7 @@ use crossterm::terminal;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{DisplayConfig, Glyphs, Segment, Theme};
+use crate::state::StatusSnapshot;
 
 pub struct TerminalGuard {
     child_rows: std::cell::Cell<u16>,
@@ -46,19 +47,26 @@ impl Drop for TerminalGuard {
 
 pub struct StatusRenderer {
     display: DisplayConfig,
+    snapshot: StatusSnapshot,
     started: Instant,
 }
 
 impl StatusRenderer {
-    pub fn new(display: DisplayConfig) -> Self {
+    pub fn new(display: DisplayConfig, snapshot: StatusSnapshot) -> Self {
         Self {
             display,
+            snapshot,
             started: Instant::now(),
         }
     }
 
     pub fn draw(&mut self, output: &mut impl Write, width: u16, rows: u16) -> Result<()> {
-        let text = status_line(width, &self.display, self.started.elapsed().as_secs());
+        let text = status_line(
+            width,
+            &self.display,
+            &self.snapshot,
+            self.started.elapsed().as_secs(),
+        );
         let style = theme_style(self.display.theme);
         write!(
             output,
@@ -71,10 +79,15 @@ impl StatusRenderer {
 }
 
 pub fn preview_line(width: u16, display: &DisplayConfig) -> String {
-    status_line(width, display, 8)
+    status_line(width, display, &StatusSnapshot::showcase(), 8)
 }
 
-fn status_line(width: u16, display: &DisplayConfig, elapsed: u64) -> String {
+fn status_line(
+    width: u16,
+    display: &DisplayConfig,
+    snapshot: &StatusSnapshot,
+    elapsed: u64,
+) -> String {
     let spinner = match display.glyphs {
         Glyphs::Ascii => ">",
         Glyphs::Unicode => "●",
@@ -87,20 +100,106 @@ fn status_line(width: u16, display: &DisplayConfig, elapsed: u64) -> String {
         })
         .unwrap_or_else(|| "workspace".into());
     let cwd = sanitize_dynamic(&cwd);
-    let segments = display
+    let mut segments = display
         .segments
         .iter()
-        .map(|segment| match segment {
-            Segment::App => format!("{spinner} Codex"),
-            Segment::Elapsed => format!("{elapsed}s"),
-            Segment::Cwd => cwd.clone(),
-            Segment::Status => "companion active".into(),
+        .filter_map(|segment| {
+            segment_text(*segment, spinner, &cwd, elapsed, snapshot).map(|text| (*segment, text))
         })
-        .collect::<Vec<String>>();
-    fit(
-        format!(" {} ", segments.join(&display.separator)),
-        width as usize,
+        .collect::<Vec<(Segment, String)>>();
+    while rendered_width(&segments, &display.separator) > width as usize && segments.len() > 1 {
+        let remove = segments
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, (segment, _))| segment_priority(*segment))
+            .map(|(index, _)| index)
+            .unwrap_or(segments.len() - 1);
+        segments.remove(remove);
+    }
+    let text = segments
+        .into_iter()
+        .map(|(_, text)| text)
+        .collect::<Vec<_>>()
+        .join(&display.separator);
+    fit(format!(" {text} "), width as usize)
+}
+
+fn segment_text(
+    segment: Segment,
+    spinner: &str,
+    cwd: &str,
+    elapsed: u64,
+    snapshot: &StatusSnapshot,
+) -> Option<String> {
+    match segment {
+        Segment::App => Some(format!("{spinner} Codex")),
+        Segment::Model => snapshot
+            .model
+            .as_ref()
+            .map(|model| match &snapshot.reasoning {
+                Some(reasoning) => format!("{model} {reasoning}"),
+                None => model.clone(),
+            }),
+        Segment::Work => snapshot.work.clone(),
+        Segment::Context => snapshot.context_percent.map(context_bar),
+        Segment::Git => snapshot.git_branch.as_ref().map(|branch| {
+            format!(
+                "{}{}",
+                sanitize_dynamic(branch),
+                if snapshot.git_dirty == Some(true) {
+                    "*"
+                } else {
+                    ""
+                }
+            )
+        }),
+        Segment::Agents => match (snapshot.agents_active, snapshot.agents_total) {
+            (Some(active), Some(total)) => Some(format!("↑{active}/{total} agents")),
+            _ => None,
+        },
+        Segment::Plan => match (snapshot.plan_completed, snapshot.plan_total) {
+            (Some(completed), Some(total)) => Some(format!("{completed}/{total} plan")),
+            _ => None,
+        },
+        Segment::Safety => snapshot.safety.as_deref().map(sanitize_dynamic),
+        Segment::Elapsed => Some(format!("{elapsed}s")),
+        Segment::Cwd => Some(cwd.to_owned()),
+        Segment::Status => Some("healthy".into()),
+    }
+}
+
+fn context_bar(percent: u8) -> String {
+    let percent = percent.min(100);
+    let filled = usize::from(percent.div_ceil(20));
+    format!(
+        "ctx {}{} {percent}%",
+        "█".repeat(filled),
+        "░".repeat(5 - filled)
     )
+}
+
+fn rendered_width(segments: &[(Segment, String)], separator: &str) -> usize {
+    let content = segments
+        .iter()
+        .map(|(_, text)| UnicodeWidthStr::width(text.as_str()))
+        .sum::<usize>();
+    content + UnicodeWidthStr::width(separator) * segments.len().saturating_sub(1) + 2
+}
+
+fn segment_priority(segment: Segment) -> u8 {
+    match segment {
+        Segment::Work => 100,
+        Segment::Context => 95,
+        Segment::Model => 90,
+        Segment::Git => 85,
+        Segment::App => 80,
+        Segment::Agents => 70,
+        Segment::Plan => 65,
+        Segment::Safety => 60,
+        Segment::Elapsed => 50,
+        Segment::Cwd => 40,
+        Segment::Status => 10,
+    }
 }
 
 fn sanitize_dynamic(value: &str) -> String {

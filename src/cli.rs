@@ -6,6 +6,7 @@ use crate::config::{self, Config, Glyphs, LaunchMode, Segment, Theme};
 use crate::native_status;
 use crate::process::{self, LaunchRequest};
 use crate::render;
+use crate::sources;
 
 #[derive(Debug, Parser)]
 #[command(name = "codexline", version, about)]
@@ -69,11 +70,13 @@ fn run_codex(mut args: Vec<String>) -> Result<i32> {
         }
     };
     let executable = process::discover_codex()?;
+    let snapshot = sources::local_snapshot(&args);
     let request = LaunchRequest {
         executable,
         args,
         bypass: process::bypass_reason(explicit_bypass),
         display: config.display,
+        snapshot,
     };
     process::launch(request)
 }
@@ -89,6 +92,7 @@ fn preview(width: Option<u16>) -> Result<i32> {
     let width = width
         .or_else(|| crossterm::terminal::size().ok().map(|(columns, _)| columns))
         .unwrap_or(100);
+    println!("Simulated rich preview (unknown live data is hidden):");
     println!("{}", render::preview_line(width, &config.display));
     Ok(0)
 }
@@ -143,9 +147,9 @@ fn configure() -> Result<i32> {
     };
 
     println!("\nCodexline setup · Preset (2/5)\n");
-    println!("  1  Full      App, elapsed, directory, and status");
-    println!("  2  Focus     App, elapsed, and directory");
-    println!("  3  Minimal   App and elapsed");
+    println!("  1  Full      Model, work, context, Git, agents, plan, safety, and local state");
+    println!("  2  Focus     Model, work, context, Git, and elapsed");
+    println!("  3  Minimal   Work, context, and Git");
     println!("  4  Custom    Keep the current module selection");
     let preset_default = preset_number(&config.display.segments);
     let preset = prompt(&format!("Choose [{preset_default}]: "))?;
@@ -155,8 +159,15 @@ fn configure() -> Result<i32> {
         preset.as_str()
     } {
         "1" => full_segments(),
-        "2" => vec![Segment::App, Segment::Elapsed, Segment::Cwd],
-        "3" => vec![Segment::App, Segment::Elapsed],
+        "2" => vec![
+            Segment::App,
+            Segment::Model,
+            Segment::Work,
+            Segment::Context,
+            Segment::Git,
+            Segment::Elapsed,
+        ],
+        "3" => vec![Segment::Work, Segment::Context, Segment::Git],
         "4" => config.display.segments,
         _ => anyhow::bail!("expected 1, 2, 3, or 4; no changes were saved"),
     };
@@ -260,18 +271,33 @@ fn prompt(label: &str) -> Result<String> {
 fn full_segments() -> Vec<Segment> {
     vec![
         Segment::App,
+        Segment::Model,
+        Segment::Work,
+        Segment::Context,
+        Segment::Git,
+        Segment::Agents,
+        Segment::Plan,
+        Segment::Safety,
         Segment::Elapsed,
         Segment::Cwd,
-        Segment::Status,
     ]
 }
 
 fn preset_number(segments: &[Segment]) -> &'static str {
     if segments == full_segments() {
         "1"
-    } else if segments == [Segment::App, Segment::Elapsed, Segment::Cwd] {
+    } else if segments
+        == [
+            Segment::App,
+            Segment::Model,
+            Segment::Work,
+            Segment::Context,
+            Segment::Git,
+            Segment::Elapsed,
+        ]
+    {
         "2"
-    } else if segments == [Segment::App, Segment::Elapsed] {
+    } else if segments == [Segment::Work, Segment::Context, Segment::Git] {
         "3"
     } else {
         "4"
@@ -289,12 +315,19 @@ fn print_module_choices(selected: &[Segment]) {
     }
 }
 
-fn module_choices() -> [(u8, Segment, &'static str); 4] {
+fn module_choices() -> [(u8, Segment, &'static str); 11] {
     [
         (1, Segment::App, "App       Codex identity"),
-        (2, Segment::Elapsed, "Elapsed   Session timer"),
-        (3, Segment::Cwd, "Directory Current workspace"),
-        (4, Segment::Status, "Status    Companion health"),
+        (2, Segment::Model, "Model     Model and reasoning"),
+        (3, Segment::Work, "Work      Turn phase and active tool"),
+        (4, Segment::Context, "Context   Context pressure"),
+        (5, Segment::Git, "Git       Branch and dirty state"),
+        (6, Segment::Agents, "Agents    Active and total subagents"),
+        (7, Segment::Plan, "Plan      Current plan progress"),
+        (8, Segment::Safety, "Safety    Sandbox and approval mode"),
+        (9, Segment::Elapsed, "Elapsed   Session timer"),
+        (10, Segment::Cwd, "Directory Current workspace"),
+        (11, Segment::Status, "Status    Companion health"),
     ]
 }
 
@@ -340,10 +373,10 @@ mod tests {
 
     #[test]
     fn presets_and_module_toggles_are_deterministic() {
-        let mut segments = vec![Segment::App, Segment::Elapsed];
+        let mut segments = vec![Segment::Work, Segment::Context, Segment::Git];
         assert_eq!(preset_number(&segments), "3");
-        toggle_segments(&mut segments, "2 3").unwrap();
-        assert_eq!(segments, [Segment::App, Segment::Cwd]);
+        toggle_segments(&mut segments, "4 10").unwrap();
+        assert_eq!(segments, [Segment::Work, Segment::Git, Segment::Cwd]);
         assert_eq!(preset_number(&segments), "4");
     }
 }

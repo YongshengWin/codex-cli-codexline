@@ -76,9 +76,15 @@ impl Default for DisplayConfig {
             refresh_hz: 8,
             segments: vec![
                 Segment::App,
+                Segment::Model,
+                Segment::Work,
+                Segment::Context,
+                Segment::Git,
+                Segment::Agents,
+                Segment::Plan,
+                Segment::Safety,
                 Segment::Elapsed,
                 Segment::Cwd,
-                Segment::Status,
             ],
             separator: " │ ".into(),
         }
@@ -89,6 +95,13 @@ impl Default for DisplayConfig {
 #[serde(rename_all = "kebab-case")]
 pub enum Segment {
     App,
+    Model,
+    Work,
+    Context,
+    Git,
+    Agents,
+    Plan,
+    Safety,
     Elapsed,
     Cwd,
     Status,

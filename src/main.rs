@@ -3,6 +3,8 @@ mod config;
 mod native_status;
 mod process;
 mod render;
+mod sources;
+mod state;
 
 use std::process::ExitCode;
 

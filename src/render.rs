@@ -5,7 +5,7 @@ use anyhow::Result;
 use crossterm::terminal;
 use unicode_width::UnicodeWidthStr;
 
-use crate::config::{DisplayConfig, Glyphs, Theme};
+use crate::config::{DisplayConfig, Glyphs, Segment, Theme};
 
 pub struct TerminalGuard {
     child_rows: std::cell::Cell<u16>,
@@ -86,16 +86,28 @@ fn status_line(width: u16, display: &DisplayConfig, elapsed: u64) -> String {
                 .map(|name| name.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| "workspace".into());
-    let full = format!(" {spinner} Codex · {elapsed}s │ {cwd} │ companion active ");
-    let compact = format!(" {spinner} Codex · {elapsed}s │ {cwd} ");
+    let cwd = sanitize_dynamic(&cwd);
+    let segments = display
+        .segments
+        .iter()
+        .map(|segment| match segment {
+            Segment::App => format!("{spinner} Codex"),
+            Segment::Elapsed => format!("{elapsed}s"),
+            Segment::Cwd => cwd.clone(),
+            Segment::Status => "companion active".into(),
+        })
+        .collect::<Vec<String>>();
     fit(
-        if UnicodeWidthStr::width(full.as_str()) <= width as usize {
-            full
-        } else {
-            compact
-        },
+        format!(" {} ", segments.join(&display.separator)),
         width as usize,
     )
+}
+
+fn sanitize_dynamic(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_control())
+        .collect()
 }
 
 fn fit(mut text: String, width: usize) -> String {
@@ -128,5 +140,17 @@ mod tests {
             let line = preview_line(width, &DisplayConfig::default());
             assert_eq!(UnicodeWidthStr::width(line.as_str()), width as usize);
         }
+    }
+
+    #[test]
+    fn preview_respects_segment_order_and_visibility() {
+        let display = DisplayConfig {
+            segments: vec![crate::config::Segment::Elapsed, crate::config::Segment::App],
+            separator: " :: ".into(),
+            ..DisplayConfig::default()
+        };
+        let line = preview_line(120, &display);
+        assert!(line.contains("8s :: ● Codex"));
+        assert!(!line.contains("companion active"));
     }
 }

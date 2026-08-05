@@ -153,6 +153,22 @@ codexline preview      # preview the current static responsive status line
 codexline doctor       # inspect discovery, TTY state, backend, and config path
 ```
 
+The prototype bottom dock supports configurable segment order and visibility in
+`~/.config/codexline/config.toml`:
+
+```toml
+[display]
+theme = "codex-dark"
+glyphs = "unicode"
+refresh_hz = 8
+segments = ["app", "elapsed", "cwd", "status"]
+separator = " │ "
+```
+
+Available M1 segments are `app`, `elapsed`, `cwd`, and `status`. Remove a name
+to hide it or reorder the array to move it. Rich live-state modules arrive with
+the shared state engine rather than being inferred from terminal text.
+
 Planned commands and extensions:
 
 ```text

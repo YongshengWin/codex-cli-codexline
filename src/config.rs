@@ -64,6 +64,8 @@ pub struct DisplayConfig {
     pub theme: Theme,
     pub glyphs: Glyphs,
     pub refresh_hz: u8,
+    pub segments: Vec<Segment>,
+    pub separator: String,
 }
 
 impl Default for DisplayConfig {
@@ -72,8 +74,24 @@ impl Default for DisplayConfig {
             theme: Theme::CodexDark,
             glyphs: Glyphs::Unicode,
             refresh_hz: 8,
+            segments: vec![
+                Segment::App,
+                Segment::Elapsed,
+                Segment::Cwd,
+                Segment::Status,
+            ],
+            separator: " │ ".into(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "kebab-case")]
+pub enum Segment {
+    App,
+    Elapsed,
+    Cwd,
+    Status,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
@@ -117,6 +135,23 @@ impl Config {
         anyhow::ensure!(
             (1..=20).contains(&self.display.refresh_hz),
             "display.refresh_hz must be between 1 and 20"
+        );
+        anyhow::ensure!(
+            !self.display.segments.is_empty(),
+            "display.segments must contain at least one segment"
+        );
+        let unique: std::collections::HashSet<_> = self.display.segments.iter().collect();
+        anyhow::ensure!(
+            unique.len() == self.display.segments.len(),
+            "display.segments cannot contain duplicates"
+        );
+        anyhow::ensure!(
+            !self.display.separator.chars().any(char::is_control),
+            "display.separator cannot contain terminal control characters"
+        );
+        anyhow::ensure!(
+            self.display.separator.chars().count() <= 8,
+            "display.separator cannot be longer than 8 characters"
         );
         anyhow::ensure!(
             self.launch.bypass_flag == "--no-companion",
@@ -196,6 +231,17 @@ mod tests {
             version: 2,
             ..Config::default()
         };
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_duplicate_segments_and_control_characters() {
+        let mut config = Config::default();
+        config.display.segments = vec![super::Segment::App, super::Segment::App];
+        assert!(config.validate().is_err());
+
+        let mut config = Config::default();
+        config.display.separator = "\u{1b}".into();
         assert!(config.validate().is_err());
     }
 

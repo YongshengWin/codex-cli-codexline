@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 
-use crate::config::{self, Config, LaunchMode};
+use crate::config::{self, Config, Glyphs, LaunchMode, Segment, Theme};
 use crate::native_status;
 use crate::process::{self, LaunchRequest};
 use crate::render;
@@ -131,19 +131,86 @@ fn configure() -> Result<i32> {
     println!("     Reversible user-level shim; official Codex is never overwritten.\n");
     println!("  2  Use the explicit `codexline` command");
     println!("     Your existing `codex` command remains untouched.\n");
-    print!("Choose [1]: ");
-    io::stdout().flush()?;
-    let mut answer = String::new();
-    io::stdin().read_line(&mut answer)?;
-    config.launch.mode = match answer.trim() {
-        "" | "1" => LaunchMode::Shim,
+    let launch_default = match config.launch.mode {
+        LaunchMode::Shim => "1",
+        LaunchMode::Explicit => "2",
+    };
+    config.launch.mode = match prompt(&format!("Choose [{launch_default}]: "))?.as_str() {
+        "" => config.launch.mode,
+        "1" => LaunchMode::Shim,
         "2" => LaunchMode::Explicit,
+        _ => anyhow::bail!("expected 1 or 2; no changes were saved"),
+    };
+
+    println!("\nCodexline setup · Preset (2/5)\n");
+    println!("  1  Full      App, elapsed, directory, and status");
+    println!("  2  Focus     App, elapsed, and directory");
+    println!("  3  Minimal   App and elapsed");
+    println!("  4  Custom    Keep the current module selection");
+    let preset_default = preset_number(&config.display.segments);
+    let preset = prompt(&format!("Choose [{preset_default}]: "))?;
+    config.display.segments = match if preset.is_empty() {
+        preset_default
+    } else {
+        preset.as_str()
+    } {
+        "1" => full_segments(),
+        "2" => vec![Segment::App, Segment::Elapsed, Segment::Cwd],
+        "3" => vec![Segment::App, Segment::Elapsed],
+        "4" => config.display.segments,
+        _ => anyhow::bail!("expected 1, 2, 3, or 4; no changes were saved"),
+    };
+
+    println!("\nCodexline setup · Modules (3/5)\n");
+    print_module_choices(&config.display.segments);
+    println!("Toggle modules with numbers separated by spaces; Enter keeps them.");
+    let toggles = prompt("Toggle: ")?;
+    if !toggles.is_empty() {
+        toggle_segments(&mut config.display.segments, &toggles)?;
+    }
+    anyhow::ensure!(
+        !config.display.segments.is_empty(),
+        "at least one module must remain enabled; no changes were saved"
+    );
+
+    println!("\nCodexline setup · Theme (4/5)\n");
+    println!("  1  Codex Dark");
+    println!("  2  Codex Light");
+    println!("  3  Minimal");
+    println!("  4  Mono");
+    let theme_default = theme_number(config.display.theme);
+    let theme = prompt(&format!("Theme [{theme_default}]: "))?;
+    config.display.theme = match if theme.is_empty() {
+        theme_default
+    } else {
+        theme.as_str()
+    } {
+        "1" => Theme::CodexDark,
+        "2" => Theme::CodexLight,
+        "3" => Theme::Minimal,
+        "4" => Theme::Mono,
+        _ => anyhow::bail!("expected a theme from 1 to 4; no changes were saved"),
+    };
+    let glyph_default = match config.display.glyphs {
+        Glyphs::Unicode => "1",
+        Glyphs::Ascii => "2",
+    };
+    let glyphs = prompt(&format!("Glyphs: 1 Unicode, 2 ASCII [{glyph_default}]: "))?;
+    config.display.glyphs = match glyphs.as_str() {
+        "" => config.display.glyphs,
+        "1" => Glyphs::Unicode,
+        "2" => Glyphs::Ascii,
         _ => anyhow::bail!("expected 1 or 2; no changes were saved"),
     };
 
     let official = process::discover_codex().ok();
     let shim = config::suggested_shim_path()?;
     let native = native_status::detect(&[]);
+    println!("\nCodexline setup · Review (5/5)\n");
+    println!("Wide preview:");
+    println!("{}", render::preview_line(88, &config.display).trim_end());
+    println!("Narrow preview:");
+    println!("{}", render::preview_line(48, &config.display).trim_end());
     println!("\nDry run");
     println!("  mode: {}", config.launch.mode);
     println!("  native status line: {} ({})", native.state, native.source);
@@ -170,29 +237,113 @@ fn configure() -> Result<i32> {
         LaunchMode::Explicit => println!("  planned shim: none"),
     }
     println!("  config: {}", config::path()?.display());
-    print!("\nSave this configuration? [Y/n]: ");
-    io::stdout().flush()?;
-    answer.clear();
-    io::stdin().read_line(&mut answer)?;
-    if matches!(answer.trim(), "n" | "N" | "no" | "NO") {
+    let answer = prompt("\nSave this configuration? [Y/n]: ")?;
+    if matches!(answer.as_str(), "n" | "N" | "no" | "NO") {
         println!("No changes saved.");
         return Ok(0);
     }
     config.save_atomic()?;
     let executable = std::env::current_exe().context("could not resolve the Codexline binary")?;
-    println!("Saved launch preference; no shim was installed.");
+    println!("Saved configuration; no shim was installed.");
     println!("Preview with: {} preview", executable.display());
     Ok(0)
 }
 
+fn prompt(label: &str) -> Result<String> {
+    print!("{label}");
+    io::stdout().flush()?;
+    let mut answer = String::new();
+    io::stdin().read_line(&mut answer)?;
+    Ok(answer.trim().to_owned())
+}
+
+fn full_segments() -> Vec<Segment> {
+    vec![
+        Segment::App,
+        Segment::Elapsed,
+        Segment::Cwd,
+        Segment::Status,
+    ]
+}
+
+fn preset_number(segments: &[Segment]) -> &'static str {
+    if segments == full_segments() {
+        "1"
+    } else if segments == [Segment::App, Segment::Elapsed, Segment::Cwd] {
+        "2"
+    } else if segments == [Segment::App, Segment::Elapsed] {
+        "3"
+    } else {
+        "4"
+    }
+}
+
+fn print_module_choices(selected: &[Segment]) {
+    for (number, segment, label) in module_choices() {
+        let mark = if selected.contains(&segment) {
+            "x"
+        } else {
+            " "
+        };
+        println!("  {number}  [{mark}] {label}");
+    }
+}
+
+fn module_choices() -> [(u8, Segment, &'static str); 4] {
+    [
+        (1, Segment::App, "App       Codex identity"),
+        (2, Segment::Elapsed, "Elapsed   Session timer"),
+        (3, Segment::Cwd, "Directory Current workspace"),
+        (4, Segment::Status, "Status    Companion health"),
+    ]
+}
+
+fn toggle_segments(selected: &mut Vec<Segment>, input: &str) -> Result<()> {
+    for token in input.split([',', ' ']).filter(|token| !token.is_empty()) {
+        let number: u8 = token
+            .parse()
+            .with_context(|| format!("invalid module number `{token}`"))?;
+        let segment = module_choices()
+            .into_iter()
+            .find(|choice| choice.0 == number)
+            .map(|choice| choice.1)
+            .with_context(|| format!("module number {number} is not available"))?;
+        if let Some(index) = selected.iter().position(|current| *current == segment) {
+            selected.remove(index);
+        } else {
+            selected.push(segment);
+        }
+    }
+    Ok(())
+}
+
+fn theme_number(theme: Theme) -> &'static str {
+    match theme {
+        Theme::CodexDark => "1",
+        Theme::CodexLight => "2",
+        Theme::Minimal => "3",
+        Theme::Mono => "4",
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::remove_bypass_flag;
+    use super::{preset_number, remove_bypass_flag, toggle_segments};
+    use crate::config::Segment;
 
     #[test]
     fn removes_only_companion_bypass_flag() {
         let mut args = vec!["exec".into(), "--no-companion".into(), "hello".into()];
         assert!(remove_bypass_flag(&mut args));
         assert_eq!(args, ["exec", "hello"]);
+    }
+
+    #[test]
+    fn presets_and_module_toggles_are_deterministic() {
+        let mut segments = vec![Segment::App, Segment::Elapsed];
+        assert_eq!(preset_number(&segments), "3");
+        toggle_segments(&mut segments, "2 3").unwrap();
+        assert_eq!(segments, [Segment::App, Segment::Cwd]);
+        assert_eq!(preset_number(&segments), "4");
     }
 }

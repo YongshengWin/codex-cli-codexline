@@ -98,9 +98,9 @@ Codexline is not yet published and does not install a shim in this milestone.
 
 ## Configure it visually
 
-The first launch-mode step of `codexline config` is implemented as a safe text
-wizard. The complete planned experience has two layers sharing one TOML
-configuration.
+`codexline config` implements the complete five-step guided flow as a safe text
+wizard with presets, module toggles, theme and glyph selection, wide/narrow
+previews, and a final dry run. The advanced three-pane editor remains planned.
 
 ### 1. Guided setup
 
@@ -148,7 +148,7 @@ Implemented commands:
 
 ```text
 codexline run -- ...   # run official Codex; arguments pass through unchanged
-codexline config       # choose and save launch mode after a dry run
+codexline config       # guided launch, preset, modules, theme, preview, review
 codexline preview      # preview the current static responsive status line
 codexline doctor       # inspect discovery, TTY state, backend, and config path
 ```

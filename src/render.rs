@@ -34,7 +34,11 @@ impl TerminalGuard {
 impl Drop for TerminalGuard {
     fn drop(&mut self) {
         let mut stdout = io::stdout().lock();
-        let _ = write!(stdout, "\x1b[r\x1b[0m\x1b[?25h");
+        let status_row = self.child_rows.get().saturating_add(1);
+        let _ = write!(
+            stdout,
+            "\x1b7\x1b[{status_row};1H\x1b[2K\x1b8\x1b[r\x1b[0m\x1b[?25h"
+        );
         let _ = stdout.flush();
         let _ = terminal::disable_raw_mode();
     }
@@ -58,7 +62,7 @@ impl StatusRenderer {
         let style = theme_style(self.display.theme);
         write!(
             output,
-            "\x1b[1;{}r\x1b7\x1b[{};1H\x1b[2K{style}{text}\x1b[0m\x1b8",
+            "\x1b7\x1b[1;{}r\x1b[{};1H\x1b[2K{style}{text}\x1b[0m\x1b8",
             rows.saturating_sub(1),
             rows,
         )?;

@@ -195,15 +195,19 @@ fn prepare_pty(
     renderer.draw(&mut stdout, columns, rows).map_err(after)?;
     let mut last_size = (columns, rows);
     let mut last_draw = std::time::Instant::now();
+    let frame_interval = Duration::from_millis(1000 / u64::from(display.refresh_hz));
     loop {
         match output_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(Ok(bytes)) => {
                 stdout
                     .write_all(&bytes)
                     .map_err(|error| after(error.into()))?;
-                renderer
-                    .draw(&mut stdout, last_size.0, last_size.1)
-                    .map_err(after)?;
+                if last_draw.elapsed() >= frame_interval {
+                    renderer
+                        .draw(&mut stdout, last_size.0, last_size.1)
+                        .map_err(after)?;
+                    last_draw = std::time::Instant::now();
+                }
                 stdout.flush().map_err(|error| after(error.into()))?;
             }
             Ok(Err(error)) => {

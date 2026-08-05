@@ -158,7 +158,7 @@ The prototype bottom dock supports configurable segment order and visibility in
 
 ```toml
 [display]
-theme = "inherit" # transparent background; uses the terminal palette
+theme = "ox96f" # transparent 0x96f neon palette; "inherit" uses terminal colors
 glyphs = "unicode"
 refresh_hz = 8
 rows = 3
@@ -174,13 +174,15 @@ Available segments are `app`, `model`, `work`, `context`, `tokens`,
 `rate-limits`, `git`, `worktree`,
 `tools`, `agents`, `plan`, `compactions`, `safety`, `elapsed`, `cwd`, and
 `status`. Remove a name to hide it or reorder the array to move it. `inherit`
-never paints a background and maps semantic colors through the terminal palette;
-the fixed `codex-dark` and `codex-light` themes remain optional. `preview` uses
-clearly labelled simulated state to demonstrate the responsive layout.
+maps semantic colors through the terminal palette. `ox96f` uses the high-contrast
+cyan, green, yellow, violet, and red 0x96f palette. Both remain transparent; the
+fixed `codex-dark` and `codex-light` themes paint their own backgrounds.
+`preview` uses clearly labelled simulated state to demonstrate the responsive
+layout.
 
 `rate-limits` is populated through a separate, read-only official Codex
 app-server process. It shows the available 5-hour/weekly windows, remaining
-percentage, reset countdown, and reset credits. Disable that process without
+percentage, explicit `reset 2d 5h` countdown, and reset credits. Disable that process without
 affecting Codex or Hooks:
 
 ```toml

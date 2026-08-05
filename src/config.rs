@@ -145,6 +145,7 @@ pub enum Segment {
 pub enum Theme {
     #[default]
     Inherit,
+    Ox96f,
     CodexDark,
     CodexLight,
     Minimal,

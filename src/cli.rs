@@ -208,10 +208,11 @@ fn configure() -> Result<i32> {
 
     println!("\nCodexline setup · Theme (4/5)\n");
     println!("  1  Inherit terminal theme (recommended)");
-    println!("  2  Codex Dark");
-    println!("  3  Codex Light");
-    println!("  4  Minimal");
-    println!("  5  Mono");
+    println!("  2  0x96f Neon (transparent)");
+    println!("  3  Codex Dark");
+    println!("  4  Codex Light");
+    println!("  5  Minimal");
+    println!("  6  Mono");
     let theme_default = theme_number(config.display.theme);
     let theme = prompt(&format!("Theme [{theme_default}]: "))?;
     config.display.theme = match if theme.is_empty() {
@@ -220,11 +221,12 @@ fn configure() -> Result<i32> {
         theme.as_str()
     } {
         "1" => Theme::Inherit,
-        "2" => Theme::CodexDark,
-        "3" => Theme::CodexLight,
-        "4" => Theme::Minimal,
-        "5" => Theme::Mono,
-        _ => anyhow::bail!("expected a theme from 1 to 5; no changes were saved"),
+        "2" => Theme::Ox96f,
+        "3" => Theme::CodexDark,
+        "4" => Theme::CodexLight,
+        "5" => Theme::Minimal,
+        "6" => Theme::Mono,
+        _ => anyhow::bail!("expected a theme from 1 to 6; no changes were saved"),
     };
     let glyph_default = match config.display.glyphs {
         Glyphs::Unicode => "1",
@@ -411,10 +413,11 @@ fn toggle_segments(selected: &mut Vec<Segment>, input: &str) -> Result<()> {
 fn theme_number(theme: Theme) -> &'static str {
     match theme {
         Theme::Inherit => "1",
-        Theme::CodexDark => "2",
-        Theme::CodexLight => "3",
-        Theme::Minimal => "4",
-        Theme::Mono => "5",
+        Theme::Ox96f => "2",
+        Theme::CodexDark => "3",
+        Theme::CodexLight => "4",
+        Theme::Minimal => "5",
+        Theme::Mono => "6",
     }
 }
 

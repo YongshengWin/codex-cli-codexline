@@ -350,7 +350,7 @@ fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
     let mut text = context_bar(percent);
     if let (Some(used), Some(window)) = (snapshot.context_used, snapshot.context_window) {
         text.push_str(&format!(
-            " {}/{}",
+            " · {}/{}",
             compact_number(used),
             compact_number(window)
         ));
@@ -380,23 +380,23 @@ fn rate_limits_text(snapshot: &StatusSnapshot) -> Option<String> {
         .take(2)
         .map(|window| {
             let label = match window.window_minutes {
-                Some(minutes) if minutes <= 360 => "5h".to_owned(),
-                Some(minutes) if minutes >= 7 * 24 * 60 => "weekly".to_owned(),
-                Some(minutes) => format!("{}h", minutes.div_ceil(60)),
-                None => "limit".to_owned(),
+                Some(minutes) if minutes <= 360 => "5H".to_owned(),
+                Some(minutes) if minutes >= 7 * 24 * 60 => "WEEK".to_owned(),
+                Some(minutes) => format!("{}H", minutes.div_ceil(60)),
+                None => "LIMIT".to_owned(),
             };
             let left = 100_u8.saturating_sub(window.used_percent);
             let reset = window
                 .resets_at
                 .and_then(reset_in)
-                .map(|value| format!(" ↻{value}"));
-            format!("{label} {left}% left{}", reset.unwrap_or_default())
+                .map(|value| format!(" · reset {value}"));
+            format!("{label} {left}%{}", reset.unwrap_or_default())
         })
         .collect::<Vec<_>>();
     if let Some(credits) = snapshot.reset_credits.filter(|value| *value > 0) {
-        parts.push(format!("reset ×{credits}"));
+        parts.push(format!("+{credits} reset"));
     }
-    (!parts.is_empty()).then(|| parts.join(" · "))
+    (!parts.is_empty()).then(|| parts.join("  "))
 }
 
 fn reset_in(timestamp: u64) -> Option<String> {
@@ -405,12 +405,12 @@ fn reset_in(timestamp: u64) -> Option<String> {
     let seconds = timestamp.saturating_sub(now);
     if seconds >= 86_400 {
         Some(format!(
-            "{}d{}h",
+            "{}d {}h",
             seconds / 86_400,
             seconds % 86_400 / 3_600
         ))
     } else if seconds >= 3_600 {
-        Some(format!("{}h{}m", seconds / 3_600, seconds % 3_600 / 60))
+        Some(format!("{}h {}m", seconds / 3_600, seconds % 3_600 / 60))
     } else {
         Some(format!("{}m", seconds.div_ceil(60)))
     }
@@ -500,9 +500,10 @@ fn git_text(branch: &str, snapshot: &StatusSnapshot) -> String {
 
 fn context_bar(percent: u8) -> String {
     let percent = percent.min(100);
-    let filled = usize::from(percent.div_ceil(20));
+    let free = 100_u8.saturating_sub(percent);
+    let filled = usize::from((free.saturating_add(10) / 20).min(5));
     format!(
-        "ctx {}{} {percent}%",
+        "CTX {}{} {free}% free",
         "█".repeat(filled),
         "░".repeat(5 - filled)
     )
@@ -556,7 +557,7 @@ fn fit(mut text: String, width: usize) -> String {
 
 fn theme_base(theme: Theme) -> &'static str {
     match theme {
-        Theme::Inherit => "\x1b[0m",
+        Theme::Inherit | Theme::Ox96f => "\x1b[0m",
         Theme::CodexDark => "\x1b[0m\x1b[48;2;17;20;22m\x1b[38;2;214;222;217m",
         Theme::CodexLight => "\x1b[0m\x1b[48;2;238;242;239m\x1b[38;2;35;42;38m",
         Theme::Minimal | Theme::Mono => "\x1b[0m",
@@ -566,6 +567,7 @@ fn theme_base(theme: Theme) -> &'static str {
 fn theme_separator(theme: Theme) -> &'static str {
     match theme {
         Theme::Inherit => "\x1b[2m",
+        Theme::Ox96f => "\x1b[38;2;84;84;82m",
         Theme::CodexDark => "\x1b[38;2;74;85;79m",
         Theme::CodexLight => "\x1b[38;2;153;164;157m",
         Theme::Minimal => "\x1b[2m",
@@ -597,6 +599,26 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
             Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => "\x1b[35m",
             Segment::Safety => "\x1b[31m",
             Segment::Elapsed | Segment::Cwd | Segment::Status => "\x1b[2m",
+        };
+    }
+    if matches!(theme, Theme::Ox96f) {
+        return match segment {
+            Segment::App => "\x1b[1m\x1b[38;2;179;224;58m",
+            Segment::Model | Segment::Agents | Segment::Tools | Segment::Tokens => {
+                "\x1b[38;2;0;205;232m"
+            }
+            Segment::Work => "\x1b[1m\x1b[38;2;255;199;57m",
+            Segment::Context => match snapshot.context_percent.unwrap_or(0) {
+                80..=u8::MAX => "\x1b[1m\x1b[38;2;255;102;109m",
+                60..=79 => "\x1b[1m\x1b[38;2;255;199;57m",
+                _ => "\x1b[1m\x1b[38;2;179;224;58m",
+            },
+            Segment::RateLimits => "\x1b[1m\x1b[38;2;255;199;57m",
+            Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => {
+                "\x1b[38;2;163;146;232m"
+            }
+            Segment::Safety => "\x1b[38;2;255;102;109m",
+            Segment::Elapsed | Segment::Cwd | Segment::Status => "\x1b[38;2;157;234;246m",
         };
     }
     let dark = matches!(theme, Theme::CodexDark);
@@ -691,6 +713,17 @@ mod tests {
     fn inherit_theme_never_paints_a_background() {
         let inherited = preview_ansi(100, &DisplayConfig::default()).unwrap();
         assert!(!inherited.contains("\x1b[48;"));
+
+        let ox96f = preview_ansi(
+            100,
+            &DisplayConfig {
+                theme: Theme::Ox96f,
+                ..DisplayConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(!ox96f.contains("\x1b[48;"));
+        assert!(ox96f.contains("\x1b[38;2;0;205;232m"));
 
         let fixed_dark = preview_ansi(
             100,

@@ -15,6 +15,10 @@ pub fn local_snapshot(codex_args: &[String]) -> StatusSnapshot {
         model,
         reasoning,
         work: Some("ready".into()),
+        // A plain interactive launch starts with an empty context. Resumed and forked threads
+        // remain unknown until app-server publishes their real token usage.
+        context_percent: starts_fresh_thread(codex_args).then_some(0),
+        context_used: starts_fresh_thread(codex_args).then_some(0),
         cwd: std::env::current_dir()
             .ok()
             .map(|path| path.to_string_lossy().into_owned()),
@@ -30,6 +34,12 @@ pub fn local_snapshot(codex_args: &[String]) -> StatusSnapshot {
         safety,
         ..StatusSnapshot::default()
     }
+}
+
+fn starts_fresh_thread(args: &[String]) -> bool {
+    !args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "resume" | "fork"))
 }
 
 fn read_codex_config() -> Option<toml::Value> {

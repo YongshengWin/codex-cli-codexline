@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="690" viewBox="0 0 1200 690" role="img" aria-labelledby="title desc">
+  <title id="title">Codexline guided configuration wizard</title>
+  <desc id="desc">A terminal-native five-step setup wizard that first lets users keep the codex command or use codexline explicitly.</desc>
+  <rect width="1200" height="690" fill="#0b0d0e"/>
+  <rect x="20" y="20" width="1160" height="650" fill="#0b0d0e" stroke="#38423d"/>
+  <rect x="20" y="20" width="1160" height="42" fill="#111416"/>
+  <text x="42" y="47" fill="#f1f5f2" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700">CODEXLINE SETUP</text>
+  <text x="196" y="47" fill="#606a65" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12">~/.config/codexline/config.toml</text>
+  <rect x="1018" y="31" width="140" height="21" fill="none" stroke="#f3c969"/>
+  <text x="1088" y="46" text-anchor="middle" fill="#f3c969" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700">DESIGN PREVIEW</text>
+
+  <line x1="248" y1="62" x2="248" y2="626" stroke="#29302d"/>
+  <line x1="817" y1="62" x2="817" y2="626" stroke="#29302d"/>
+  <rect x="20" y="62" width="228" height="564" fill="#111416"/>
+  <rect x="817" y="62" width="363" height="564" fill="#111416"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="42" y="98" fill="#606a65" font-size="10" font-weight="700" letter-spacing="2">PROGRESS</text>
+    <text x="42" y="140" fill="#6ee7a8" font-size="13" font-weight="700">01  LAUNCH         →</text>
+    <text x="42" y="174" fill="#606a65" font-size="13">02  PRESET</text>
+    <text x="42" y="208" fill="#606a65" font-size="13">03  MODULES</text>
+    <text x="42" y="242" fill="#606a65" font-size="13">04  THEME</text>
+    <text x="42" y="276" fill="#606a65" font-size="13">05  REVIEW</text>
+    <line x1="42" y1="310" x2="216" y2="310" stroke="#29302d"/>
+    <text x="42" y="344" fill="#98a39d" font-size="11">A  Advanced config</text>
+
+    <text x="292" y="112" fill="#f1f5f2" font-size="20" font-weight="700">Choose how you launch Codex</text>
+    <text x="292" y="138" fill="#98a39d" font-size="12">Keep the familiar command, or use Codexline explicitly.</text>
+
+    <rect x="292" y="166" width="480" height="116" fill="#1a1f21" stroke="#6ee7a8" stroke-width="2"/>
+    <text x="312" y="197" fill="#6ee7a8" font-size="13" font-weight="700">[ KEEP `codex` COMMAND ]</text>
+    <rect x="658" y="188" width="94" height="19" fill="none" stroke="#6ee7a8"/>
+    <text x="705" y="202" text-anchor="middle" fill="#6ee7a8" font-size="9">RECOMMENDED</text>
+    <text x="312" y="225" fill="#f1f5f2" font-size="11">Install a reversible PATH shim. Keep typing `codex`.</text>
+    <text x="312" y="249" fill="#98a39d" font-size="10">Official binary is never overwritten · args and exit code preserved</text>
+    <text x="312" y="268" fill="#67d8ef" font-size="10">Bypass anytime: codex --no-companion</text>
+
+    <rect x="292" y="294" width="480" height="86" fill="#111416" stroke="#29302d"/>
+    <text x="312" y="325" fill="#98a39d" font-size="13" font-weight="700">[ USE `codexline` COMMAND ]</text>
+    <text x="312" y="351" fill="#606a65" font-size="11">No shim. Run `codexline`; `codex` stays directly official.</text>
+
+    <rect x="292" y="400" width="480" height="124" fill="#111416" stroke="#29302d"/>
+    <text x="312" y="426" fill="#606a65" font-size="9" font-weight="700">DRY RUN</text>
+    <text x="312" y="452" fill="#606a65" font-size="10">Shim path</text>
+    <text x="414" y="452" fill="#f1f5f2" font-size="10">~/.local/bin/codex</text>
+    <text x="312" y="474" fill="#606a65" font-size="10">Official binary</text>
+    <text x="414" y="474" fill="#f1f5f2" font-size="10">/opt/homebrew/bin/codex</text>
+    <text x="312" y="496" fill="#606a65" font-size="10">PATH priority</text>
+    <text x="414" y="496" fill="#6ee7a8" font-size="10">OK · shim resolves first</text>
+
+    <text x="841" y="98" fill="#606a65" font-size="10" font-weight="700" letter-spacing="2">LIVE PREVIEW</text>
+    <text x="841" y="139" fill="#606a65" font-size="9">WIDE · UNICODE</text>
+    <rect x="841" y="151" width="315" height="54" fill="#0b0d0e" stroke="#29302d"/>
+    <text x="856" y="184" fill="#f1f5f2" font-size="10">gpt-5.6</text>
+    <text x="908" y="184" fill="#606a65" font-size="10">│</text>
+    <text x="924" y="184" fill="#6ee7a8" font-size="10">⟳ 8s</text>
+    <text x="966" y="184" fill="#606a65" font-size="10">│</text>
+    <text x="982" y="184" fill="#f1f5f2" font-size="10">ctx ▓▓▓░░ 42%</text>
+    <text x="1080" y="184" fill="#606a65" font-size="10">│</text>
+    <text x="1096" y="184" fill="#f3c969" font-size="10">main*</text>
+
+    <text x="841" y="245" fill="#606a65" font-size="9">NARROW · 32 COL</text>
+    <rect x="841" y="257" width="220" height="54" fill="#0b0d0e" stroke="#29302d"/>
+    <text x="856" y="290" fill="#6ee7a8" font-size="11">⟳ 8s</text>
+    <text x="902" y="290" fill="#606a65" font-size="11">│</text>
+    <text x="918" y="290" fill="#f1f5f2" font-size="11">42%</text>
+    <text x="950" y="290" fill="#606a65" font-size="11">│</text>
+    <text x="966" y="290" fill="#f3c969" font-size="11">main*</text>
+
+    <text x="841" y="351" fill="#606a65" font-size="9">ASCII FALLBACK</text>
+    <rect x="841" y="363" width="315" height="54" fill="#0b0d0e" stroke="#29302d"/>
+    <text x="856" y="396" fill="#98a39d" font-size="9">gpt-5.6 | RUN 8s | 42% | main*</text>
+
+    <rect x="841" y="473" width="315" height="110" fill="#1a1f21" stroke="#29302d"/>
+    <text x="856" y="499" fill="#6ee7a8" font-size="9" font-weight="700">CURRENT SELECTION</text>
+    <text x="856" y="525" fill="#606a65" font-size="9">launch.mode = "shim"</text>
+    <text x="856" y="544" fill="#606a65" font-size="9">command = "codex"</text>
+    <text x="856" y="563" fill="#606a65" font-size="9">bypass = "--no-companion"</text>
+  </g>
+
+  <rect x="20" y="626" width="1160" height="44" fill="#111416"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="10" font-weight="700">
+    <text x="42" y="653" fill="#98a39d">↑↓ SELECT</text>
+    <text x="142" y="653" fill="#606a65">B BACK</text>
+    <rect x="214" y="638" width="84" height="20" fill="#6ee7a8"/>
+    <text x="256" y="652" text-anchor="middle" fill="#0b0d0e">N NEXT</text>
+    <text x="924" y="653" fill="#98a39d">P PREVIEW</text>
+    <text x="1032" y="653" fill="#f37b83">Q CANCEL</text>
+  </g>
+</svg>

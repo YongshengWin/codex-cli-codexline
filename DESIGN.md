@@ -1,0 +1,472 @@
+# Codexline 设计规格
+
+Codexline 是一个跨平台的 Codex CLI 伴生程序。它不替换 Codex、不修改 Codex
+安装目录，也不依赖 Codex TUI 的文本布局。它通过 PTY/ConPTY 启动官方 Codex，
+为子进程保留少一行终端高度，并在真实终端的最后一行绘制状态栏。
+
+本文定义第一版可实现架构。项目暂名 `codexline`。
+
+## 1. 产品目标
+
+- macOS、Linux、Windows 10+、WSL 上行为一致。
+- 在 Terminal.app、iTerm2、Windows Terminal、Kitty、WezTerm、Alacritty、
+  VS Code、JetBrains、Warp、tmux 和 Zellij 中工作。
+- 用户可继续输入 `codex`，所有参数、环境、信号和退出码保持不变。
+- Codex 升级后不需要重新 patch 或重新编译 Codexline。
+- 空闲 CPU 接近零；状态刷新不会降低 Codex 流式输出的响应速度。
+- 默认主题无需 Nerd Font，同时支持 Unicode、Nerd Font 和纯 ASCII。
+- 配置可热更新；错误配置和扩展模块失败不能阻止 Codex 启动。
+- 不读取 Codex 私有 SQLite 表，不依赖 transcript/rollout JSONL 格式。
+
+非目标：重新实现 Codex TUI、模型调用、权限系统、会话存储或工具执行。
+
+## 2. 总体架构
+
+```text
+                    +-----------------------+
+keyboard ---------->|                       |----------> child PTY/ConPTY
+                    |      codexline        |               |
+terminal <----------|                       |<---------- official codex
+                    +----+-------------+----+
+                         |             |
+                 terminal renderer     state engine
+                                       /     |      \
+                                  hooks   app-server  local probes
+                                           adapter    (git/time/os)
+```
+
+Codexline 是官方 Codex 的父进程。假设真实终端为 `120x40`，它给 Codex 创建
+`120x39` 的子终端。Codex 只能布局前 39 行，Codexline 使用第 40 行。
+
+程序分成五个边界清晰的 crate/module：
+
+1. `process`：真实 Codex 发现、PTY/ConPTY、信号和退出码。
+2. `relay`：无解析、低延迟地双向转发终端字节流。
+3. `sources`：Hooks、app-server 和本地探针适配器。
+4. `state`：把不同事件归一化为版本化快照。
+5. `render`：响应式布局、主题、宽度计算和终端绘制。
+
+## 3. 跨平台进程层
+
+### 3.1 Unix
+
+- macOS/Linux/WSL 使用 POSIX PTY。
+- 第一版采用 `portable-pty`，必要时为 macOS 和 Linux 增加小型原生后端。
+- 父进程进入 raw mode；子进程拥有独立 session 和 controlling terminal。
+- `SIGWINCH` 时读取真实尺寸，将子 PTY 更新为 `rows - reserved_rows`。
+- `SIGINT`、`SIGTERM`、`SIGHUP`、`SIGTSTP` 和 `SIGCONT` 按终端程序语义转发。
+
+### 3.2 Windows
+
+- Windows 10 1809+ 使用 ConPTY。
+- 启用 Virtual Terminal Processing 后使用与 Unix 相同的 ANSI renderer。
+- 使用 Job Object 绑定子进程生命周期，避免启动器异常后遗留 Codex。
+- Ctrl+C、窗口 resize 和退出码通过 Windows backend 映射。
+- WSL 作为 Linux 环境处理，不走原生 Windows backend。
+
+### 3.3 非交互模式
+
+以下情况完全旁路，直接执行真实 Codex：
+
+- stdin 或 stdout 不是 TTY。
+- `TERM=dumb`。
+- `codex exec`、管道、CI 或显式 `--no-companion`。
+- 终端小于 `40x8`。
+- PTY/ConPTY 初始化失败。
+
+旁路是功能，不是错误；必须保留原始退出码。
+
+## 4. Codex 发现与透明启动
+
+安装器提供两种模式：
+
+- `codexline` 命令：最安全，用户显式运行 `codexline run -- ...`。
+- `codex` shim：推荐体验，用户仍输入 `codex`。
+
+真实二进制发现顺序：
+
+1. `CODEXLINE_CODEX_BIN` 指定的绝对路径。
+2. 安装时保存的、仍然有效的路径。
+3. PATH 中排除当前 shim 后的下一个 `codex`。
+4. 已知安装器位置仅作为最后的提示，不静默猜测。
+
+发现结果必须满足：不是当前 shim、可执行、`codex --version` 可在短超时内成功。
+所有参数和环境原样传递。`codexline doctor` 显示解析过程。
+
+## 5. 状态数据源
+
+### 5.1 稳定层：官方 Hooks
+
+随伴生程序安装的 Codex 插件注册：
+
+- `SessionStart` / `SessionEnd`
+- `UserPromptSubmit` / `Stop`
+- `PreToolUse` / `PostToolUse`
+- `PermissionRequest`
+- `PreCompact` / `PostCompact`
+- `SubagentStart` / `SubagentStop`
+
+Hook 命令为 `codexline hook`。它从 stdin 读取一次 JSON，通过继承的
+`CODEXLINE_EVENT_ENDPOINT` 发送给父进程，然后立即退出。Hook 不产生 stdout，
+不等待重试，不在事件路径中运行 Git。
+
+Unix 使用权限为 `0600` 的 Unix datagram socket；Windows 使用当前用户 ACL 的
+Named Pipe。消息上限 64 KiB，超限或 socket 不存在时丢弃并返回成功。
+
+Hooks 提供 session、cwd、model、permission mode、turn、tool 和 subagent 状态。
+
+### 5.2 增强层：app-server 透明代理
+
+当当前 Codex 同时支持 `app-server` 和 `--remote` 时，`telemetry = "auto"` 可以
+启用透明代理：
+
+```text
+Codex TUI <-> codexline protocol proxy <-> codex app-server
+```
+
+代理原样转发协议帧，只复制并容错解析已知通知，例如：
+
+- `thread/status/changed`
+- `turn/started` / `turn/completed`
+- `item/started` / `item/completed`
+- `turn/plan/updated`
+- `thread/tokenUsage/updated`
+
+未知 method 和字段必须原样转发并忽略。握手失败、协议不兼容或 app-server
+启动超时后，在 300 ms 内回退 Hooks 模式并正常启动普通 Codex。由于 app-server
+目前仍具有实验性，这一层不能成为启动必需条件。
+
+### 5.3 本地探针
+
+本地探针在后台、带缓存执行：
+
+- Git branch、dirty/staged、ahead/behind、worktree。
+- 当前目录和项目根。
+- 会话/当前 turn 耗时。
+- Codex 和 Codexline 版本。
+- 终端宽度、主机名和时钟（可选）。
+
+Git 默认 TTL 为 2 秒，单次超时 100 ms；相同 repo 的并发请求合并。文件系统
+watcher 只用来使缓存失效，不能触发高频完整 `git status`。
+
+## 6. 版本化状态模型
+
+内部快照与 renderer 解耦：
+
+```json
+{
+  "schema_version": 1,
+  "session": {
+    "id": "thr_xxx",
+    "name": null,
+    "started_at_ms": 1785940000000
+  },
+  "codex": {
+    "version": "0.146.0",
+    "model": "gpt-5.6-sol",
+    "reasoning": "high",
+    "permission_mode": "default",
+    "sandbox": "workspace-write"
+  },
+  "turn": {
+    "id": "turn_xxx",
+    "phase": "tool_running",
+    "active_tool": "exec_command",
+    "started_at_ms": 1785940010000
+  },
+  "usage": {
+    "context_used": 42000,
+    "context_size": 200000,
+    "context_percent": 21.0,
+    "input_tokens": 36000,
+    "output_tokens": 6000
+  },
+  "agents": { "active": 2, "total": 3 },
+  "git": {
+    "branch": "feat/statusline",
+    "dirty": true,
+    "staged": 1,
+    "modified": 3,
+    "ahead": 2,
+    "behind": 0
+  },
+  "capabilities": {
+    "hooks": true,
+    "app_server": true,
+    "token_usage": true
+  }
+}
+```
+
+任何字段都允许未知。Renderer 对缺失字段隐藏 segment，不能显示误导性的零值。
+
+## 7. Renderer
+
+### 7.1 终端所有权
+
+Renderer 不解析 Codex 文本内容，只进行有限的 ECMA-48 模式观察：alternate
+screen、cursor visibility、全屏 reset 和 synchronized update。它不根据屏幕文本
+推断 Codex 状态。
+
+每次绘制：
+
+1. 合并 16 ms 内的多个状态变化。
+2. 生成一行已知显示宽度的 cell 列表。
+3. 使用 synchronized output（终端支持时）减少闪烁。
+4. 保存光标，移动到真实终端最后一行，清行并输出。
+5. 恢复 SGR 和光标状态。
+
+Codex 清屏或切换 alternate screen 后立即补画。常规状态按事件驱动更新；只有
+spinner、时钟和耗时启用时才使用定时器。
+
+### 7.2 响应式布局
+
+每个 segment 声明：
+
+- `priority`：宽度不足时的隐藏顺序。
+- `min_width` / `max_width`。
+- `truncate = "left|middle|right"`。
+- `show_when` 条件。
+- compact 和 full 两种表示。
+
+布局先保留高优先级 segment，再按可用宽度展开。宽度使用 Unicode grapheme 和
+East Asian Width 计算，不能用字符串字节数。
+
+建议默认布局：
+
+```text
+ Codex gpt-5.6-sol high | ⟳ exec 8s | ctx ▓▓░░░ 42% | ↑2 agents |  feat/statusline *
+```
+
+窄终端自动压缩为：
+
+```text
+ ⟳ exec 8s | ctx 42% | main*
+```
+
+### 7.3 颜色与字形
+
+颜色能力按 `COLORTERM`、terminfo 和 Windows VT 能力检测：truecolor -> 256 ->
+16 -> monochrome。主题可以覆盖，但不能假设用户安装 Nerd Font。
+
+内置字形配置：
+
+- `ascii`：服务器、串口和无 Unicode 环境。
+- `unicode`：默认，使用常见符号和 block bar。
+- `nerd-font`：显式启用，不自动猜字体。
+
+内置主题至少包括 `codex-dark`、`codex-light`、`minimal`、`mono` 和
+`powerline`。默认主题优先可读性，不使用连续动画和大量 emoji。
+
+## 8. 配置体验
+
+配置路径遵循平台规范：
+
+- Unix：`$XDG_CONFIG_HOME/codexline/config.toml`，默认 `~/.config/codexline/`。
+- macOS：同时接受 XDG 路径，避免产生另一套行为。
+- Windows：`%APPDATA%\codexline\config.toml`。
+
+最小配置示例：
+
+```toml
+version = 1
+
+[launch]
+mode = "shim" # shim | explicit
+bypass_flag = "--no-companion"
+
+[display]
+theme = "codex-dark"
+glyphs = "unicode"
+position = "bottom"
+refresh_hz = 8
+
+[telemetry]
+mode = "auto" # auto | hooks | app-server | local-only
+
+[[layout.left]]
+module = "model"
+priority = 90
+
+[[layout.left]]
+module = "turn"
+priority = 100
+
+[[layout.center]]
+module = "context"
+style = "bar"
+priority = 80
+
+[[layout.right]]
+module = "agents"
+priority = 60
+
+[[layout.right]]
+module = "git"
+priority = 70
+```
+
+提供以下交互命令，用户不需要手写 TOML：
+
+```text
+codexline setup          安装插件和可选 shim
+codexline config         交互配置器，修改时实时预览
+codexline preview        用模拟状态预览主题和宽度
+codexline themes         浏览内置主题
+codexline doctor         检查 Codex、PTY、Hooks、app-server 和终端能力
+codexline uninstall      完整、可逆地移除插件和 shim
+```
+
+配置 watcher 使用 debounce 和原子快照。新配置解析失败时保留最后一份有效配置，
+并在状态栏显示短暂警告；不能终止 Codex。
+
+### 8.1 双层配置流程
+
+`codexline config` 默认进入适合首次使用的五步向导：
+
+```text
+Launch -> Preset -> Modules -> Theme -> Review -> Save
+```
+
+向导必须能在 `80x24` 终端中完整使用，并始终提供当前配置的宽屏、窄屏或 ASCII
+预览。Full、Focus 和 Minimal 是起点而不是锁定模板；用户修改任何单项后，配置状态
+变为 Custom。
+
+Launch 步骤必须让用户明确选择启动方式：
+
+1. **Keep `codex` command（推荐）**：安装用户级、可逆的 PATH shim，用户继续输入
+   `codex`；不得覆盖官方二进制，必须保留所有参数、相关环境、信号和退出码，并支持
+   `codex --no-companion` 绕过 overlay 后直接启动解析到的官方二进制。
+2. **Use `codexline` command**：不创建 `codex` shim，用户显式运行 `codexline` 或
+   `codexline run -- <codex args>`；shell 中的 `codex` 继续直接指向官方程序。
+
+保存前必须展示 dry-run：计划创建的 shim 路径、解析到的官方 Codex 绝对路径、当前
+PATH 优先级、会修改的 shell 配置（如有）以及卸载恢复方式。如果 PATH 顺序使 shim
+无法生效，向导应阻止静默成功，并给出精确修复建议。安装清单必须支持无损卸载；
+用户已有同名文件时不得覆盖。
+
+用户可以在任意步骤按 `A` 进入高级三栏编辑器：
+
+1. 左侧为 Presets、Layout、Modules、Theme、Compatibility 和 Advanced 分类；
+2. 中间编辑模块顺序、优先级、宽/窄可见性、条件、阈值与 compact 表示；
+3. 右侧模拟不同宽度、字形能力、context warning、app-server 缺失等场景，并展示
+   保存前的 TOML diff。
+
+向导和高级编辑器操作同一个版本化配置快照，切换时不得丢失未保存修改。高级编辑器
+返回向导后，应回到 Review 步骤。两种界面都必须完全键盘可操作，并提供 ASCII、
+monochrome、reduced-motion 与 screen-reader-friendly 的线性预览。
+
+### 8.2 外部模块
+
+高级用户可以增加命令模块，但默认不经过 shell：
+
+```toml
+[[modules.command]]
+id = "ticket"
+argv = ["my-ticket-status", "--json"]
+interval = "5s"
+timeout = "100ms"
+max_output_bytes = 1024
+priority = 20
+```
+
+外部模块获得只读状态 JSON，并返回纯文本或受限 JSON。默认移除 ANSI 控制字符；
+只有显式 `allow_style = true` 时允许经过白名单解析的 SGR。
+
+## 9. 性能预算
+
+Release 构建目标：
+
+- 在启动 Codex 前增加的 wrapper 工作量：典型小于 20 ms。
+- 终端转发：64 KiB 缓冲，避免逐字节处理；额外首字节延迟小于 1 ms。
+- 状态渲染：典型小于 0.5 ms，最坏小于 2 ms。
+- 空闲 CPU：无时钟/spinner 时接近 0%；有 spinner 时小于 0.2%。
+- 单会话 RSS：目标小于 20 MiB，不引入 Web runtime。
+- 绘制上限：默认 8 FPS，硬上限 20 FPS。
+- Hook：典型小于 5 ms，绝不等待 Git、网络或 app-server。
+- 外部模块：独立并发限制、超时、输出上限和熔断器。
+
+实现上不使用完整终端模拟器和 DOM。Relay 路径与 JSON、Git、主题渲染完全隔离；
+Codex 大量输出时状态事件不能反向阻塞 PTY reader。
+
+## 10. 安全与隐私
+
+- 本地 socket/pipe 仅当前用户可访问，并包含每会话随机 nonce。
+- 动态文本在渲染前移除 OSC、DCS、APC 和未授权 CSI，防止终端注入。
+- 不记录 prompt、assistant 内容、命令输出或 transcript。
+- debug 日志默认关闭；开启时仍对路径、token 和环境变量做脱敏。
+- 外部模块不经过 shell，除非用户显式选择 `shell = true`。
+- 所有子命令有时间、输出大小和并发限制。
+- app-server 代理只绑定 loopback/本地 socket，不暴露网络监听端口。
+- 更新包使用平台签名和发布校验和；自动更新默认只提示，不静默替换。
+
+## 11. 故障处理
+
+优先级始终是“Codex 可用，状态栏其次”：
+
+1. app-server 不可用 -> Hooks。
+2. Hooks 不可用 -> 本地 model/version/git/time。
+3. 状态采集失败 -> 显示静态 Codexline 标识或隐藏。
+4. Renderer 失败 -> 关闭保留行，继续 PTY passthrough。
+5. PTY 初始化失败 -> 直接 `exec` 官方 Codex。
+
+使用 RAII terminal guard 和 panic/signal handler 恢复 raw mode、光标、SGR、滚动区和
+最后一行。退出码必须是官方 Codex 的退出码。`codexline doctor --report` 生成不含
+会话内容的诊断包。
+
+## 12. 安装与发布
+
+首批发布渠道：
+
+- macOS：Homebrew tap + 签名 universal binary。
+- Linux：静态或最小动态依赖的 tarball，后续提供 deb/rpm/AUR。
+- Windows：winget + 签名 zip/msi。
+- cargo-binstall 作为开发者渠道，不要求普通用户安装 Rust。
+
+`setup` 必须展示将要创建的文件，并维护安装清单。shim 默认放在用户级 bin，绝不
+覆盖官方 Codex 文件。卸载时只删除清单中由 Codexline 创建且内容未被用户修改的
+文件。
+
+## 13. 测试策略
+
+- 状态 reducer、布局、Unicode 宽度和主题使用单元与 golden tests。
+- 使用 `vt100` 测试模型验证 resize、clear screen、alternate screen 和光标恢复。
+- PTY 集成测试运行假的 Codex fixture，覆盖大量输出、交互输入和异常退出。
+- JSON/event parser 做 property tests 和 fuzzing，未知字段永不 panic。
+- CI 矩阵：macOS arm64/x64、Linux glibc/musl、Windows x64/arm64。
+- 手工兼容矩阵覆盖主要终端、tmux/Zellij、SSH、中文宽字符和 screen reader 模式。
+- 至少测试当前 Codex、上一稳定版和最新发布版；协议增强失败必须验证自动降级。
+
+## 14. 里程碑
+
+### M1：可靠终端代理
+
+- POSIX PTY、ConPTY、resize、signal、恢复和透明参数传递。
+- 静态/本地状态栏、响应式布局、四个基础主题。
+- `doctor` 和旁路模式。
+
+### M2：Codex 插件集成
+
+- Hooks 插件、事件 socket、状态 reducer。
+- model、turn、tool、permission、subagent、compact 状态。
+- Git 探针与热配置。
+
+### M3：丰富数据
+
+- app-server 透明代理和 capability detection。
+- token/context/plan 等增强字段。
+- command modules、主题导入和交互配置器。
+
+### M4：发行质量
+
+- 全平台安装器、签名、升级、uninstall。
+- 完整终端矩阵、fuzzing、基准和故障注入。
+- 发布 `1.0`，稳定配置与状态 schema。
+
+## 15. 将来的原生迁移
+
+如果 Codex 后续支持 command-backed status line provider，Codexline 保留全部状态、
+布局、主题和模块能力，只新增一个 stdin/stdout provider frontend。PTY frontend 继续
+作为旧版兼容层。用户无需迁移配置。
+
+这使上游采纳成为体验增强，而不是项目成立的前提。

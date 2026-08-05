@@ -1,0 +1,19 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local diagnostics and runtime state
+*.log
+*.profraw
+/tmp/
+
+# Superdesign scratch files; keep the design system itself versioned.
+.superdesign/tmp/

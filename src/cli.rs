@@ -87,6 +87,7 @@ fn run_codex(mut args: Vec<String>) -> Result<i32> {
         display: config.display,
         snapshot,
         app_server: config.sources.app_server,
+        remote_proxy: config.sources.remote_proxy,
     };
     process::launch(request)
 }

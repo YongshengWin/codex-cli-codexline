@@ -11,7 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
-use crate::app_server::AppServerSource;
+use crate::app_server::{AppServerSource, ProtocolProxy};
 use crate::config::DisplayConfig;
 use crate::events::EventServer;
 use crate::render::{StatusRenderer, TerminalGuard};
@@ -47,6 +47,7 @@ pub struct LaunchRequest {
     pub display: DisplayConfig,
     pub snapshot: StatusSnapshot,
     pub app_server: bool,
+    pub remote_proxy: bool,
 }
 
 pub fn bypass_reason(explicit: bool) -> Option<BypassReason> {
@@ -85,6 +86,7 @@ pub fn launch(request: LaunchRequest) -> Result<i32> {
         &request.display,
         request.snapshot,
         request.app_server,
+        request.remote_proxy,
     ) {
         PtyOutcome::Complete(code) => Ok(code),
         PtyOutcome::Unavailable(error) => {
@@ -124,8 +126,16 @@ fn launch_pty(
     display: &DisplayConfig,
     snapshot: StatusSnapshot,
     app_server: bool,
+    remote_proxy: bool,
 ) -> PtyOutcome {
-    match prepare_pty(executable, args, display, snapshot, app_server) {
+    match prepare_pty(
+        executable,
+        args,
+        display,
+        snapshot,
+        app_server,
+        remote_proxy,
+    ) {
         Ok(code) => PtyOutcome::Complete(code),
         Err((false, error)) => PtyOutcome::Unavailable(error),
         Err((true, error)) => PtyOutcome::StartedFailure(error),
@@ -138,6 +148,7 @@ fn prepare_pty(
     display: &DisplayConfig,
     snapshot: StatusSnapshot,
     app_server: bool,
+    remote_proxy: bool,
 ) -> std::result::Result<i32, (bool, anyhow::Error)> {
     let before = |error| (false, error);
     let after = |error| (true, error);
@@ -162,8 +173,16 @@ fn prepare_pty(
     let snapshot = Arc::new(RwLock::new(snapshot));
     let event_server = EventServer::start(Arc::clone(&snapshot)).ok();
 
+    let proxy = remote_proxy
+        .then(|| ProtocolProxy::start(executable, Arc::clone(&snapshot)).ok())
+        .flatten();
+    let mut child_args = args.to_vec();
+    if let Some(proxy) = &proxy {
+        child_args.push("--remote".into());
+        child_args.push(proxy.endpoint().into());
+    }
     let mut command = CommandBuilder::new(executable);
-    command.args(args);
+    command.args(&child_args);
     command.env("CODEXLINE_ACTIVE", "1");
     if let Some(server) = &event_server {
         command.env("CODEXLINE_EVENT_ENDPOINT", server.endpoint());
@@ -181,7 +200,7 @@ fn prepare_pty(
 
     // This optional read-only source never sits on the PTY relay path. Failure is silent and
     // leaves Hooks/local probes fully functional.
-    let _app_server = app_server
+    let _app_server = (app_server && proxy.is_none())
         .then(|| AppServerSource::start(executable, Arc::clone(&snapshot)).ok())
         .flatten();
 

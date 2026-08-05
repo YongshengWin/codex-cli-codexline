@@ -123,10 +123,11 @@ Hooks 提供 session、cwd、model、permission mode、turn、tool 和 subagent 
 
 ### 5.2 增强层：app-server 透明代理
 
-M3 的第一阶段允许启动独立、只读的 stdio app-server sidecar，以读取
-`account/rateLimits/read` 和滚动更新；该进程不承载 TUI thread，因此不得把它当作
-当前 thread 的 context/token 来源。`thread/tokenUsage/updated` 只在 Codexline 实际
-拥有相应 app-server thread 时采纳。sidecar 不可用时立即保留 Hooks/本地探针。
+M3 同时提供透明 loopback WebSocket proxy 和独立、只读的 stdio app-server
+sidecar。proxy 让 TUI 与 Codexline 观察同一条 app-server thread 协议流，从而采纳
+`thread/tokenUsage/updated`；sidecar 只读取 `account/rateLimits/read` 和滚动更新，
+不得把它当作当前 thread 的 context/token 来源。proxy 在 300 ms 内不可用时回退
+sidecar，再不可用时保留 Hooks/本地探针。
 
 当当前 Codex 同时支持 `app-server` 和 `--remote` 时，`telemetry = "auto"` 可以
 启用透明代理：

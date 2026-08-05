@@ -186,12 +186,15 @@ affecting Codex or Hooks:
 ```toml
 [sources]
 app_server = false
+remote_proxy = false
 ```
 
-`context` and `tokens` consume `thread/tokenUsage/updated` when Codexline owns
-an app-server-backed thread. They deliberately stay hidden in a plain Hook-only
-TUI session because Hooks do not expose token usage and Codexline does not read
-private transcripts or scrape the terminal.
+With `remote_proxy = true` (the default), Codexline starts an official loopback
+app-server and transparently routes the TUI protocol through it. `context` and
+`tokens` then consume `thread/tokenUsage/updated` from that same thread. Startup
+or handshake failure falls back within 300 ms to the read-only capacity sidecar,
+Hooks, and local probes. Codexline does not read private transcripts or scrape
+the terminal.
 
 With the optional local `codexline-events` plugin trusted, the HUD receives
 tool, subagent, plan, approval, and compaction events from official Codex Hooks.

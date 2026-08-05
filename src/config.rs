@@ -32,11 +32,16 @@ impl Default for Config {
 pub struct SourcesConfig {
     /// Starts a separate read-only official app-server process for account capacity data.
     pub app_server: bool,
+    /// Routes the TUI through a loopback app-server proxy to receive live thread events.
+    pub remote_proxy: bool,
 }
 
 impl Default for SourcesConfig {
     fn default() -> Self {
-        Self { app_server: true }
+        Self {
+            app_server: true,
+            remote_proxy: true,
+        }
     }
 }
 

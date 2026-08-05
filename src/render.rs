@@ -339,7 +339,13 @@ fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
     let percent = snapshot.context_percent.or_else(|| {
         let used = snapshot.context_used?;
         let window = snapshot.context_window?.max(1);
-        Some(((used.saturating_mul(100) / window).min(100)) as u8)
+        Some(
+            (used
+                .saturating_mul(100)
+                .saturating_add(window.saturating_sub(1))
+                / window)
+                .min(100) as u8,
+        )
     })?;
     let mut text = context_bar(percent);
     if let (Some(used), Some(window)) = (snapshot.context_used, snapshot.context_window) {

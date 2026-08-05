@@ -8,6 +8,12 @@ Codexline 是一个跨平台的 Codex CLI 伴生程序。它不替换 Codex、�
 
 ## 1. 产品目标
 
+- Codexline 必须在视觉层级、响应式布局、主题一致性和信息密度上明显优于 Codex
+  原生 status line；仅复制原生字段或改变颜色不构成完成。
+- 主力 `attached` 模式位于输入框下方并随 composer 移动；`bottom` 模式是稳定的
+  跨版本降级，而不是唯一体验。
+- 位置与功能解耦：model、turn、tool、context、usage、Git、agents、plan、permissions
+  和 integration health 等模块共用同一状态模型与布局系统。
 - macOS、Linux、Windows 10+、WSL 上行为一致。
 - 在 Terminal.app、iTerm2、Windows Terminal、Kitty、WezTerm、Alacritty、
   VS Code、JetBrains、Warp、tmux 和 Zellij 中工作。
@@ -201,6 +207,45 @@ watcher 只用来使缓存失效，不能触发高频完整 `git status`。
 任何字段都允许未知。Renderer 对缺失字段隐藏 segment，不能显示误导性的零值。
 
 ## 7. Renderer
+
+Codexline 的 renderer 是独立产品界面，不模仿 Codex 原生 footer。默认设计必须满足：
+
+- 信息具有明确的主次层级；运行状态和风险信息优先于装饰信息。
+- 宽终端展示完整上下文，窄终端自动压缩，不依赖手工切换 preset。
+- 颜色用于表达状态而非填满界面；默认主题无需 Nerd Font，ASCII 与单色模式仍完整。
+- 不连续闪烁、不争抢输入光标、不让动画掩盖真实延迟。
+- 缺失数据隐藏模块，降级状态明确标记，不显示误导性的 `0` 或虚构百分比。
+
+首版丰富模块目标：
+
+| 类别 | 模块 |
+| --- | --- |
+| Session | model、reasoning、session elapsed、Codex version |
+| Work | phase、active tool、tool elapsed、permission request |
+| Capacity | context used/remaining、tokens、rate/usage warning |
+| Project | cwd、project root、Git branch/dirty/ahead/behind |
+| Agents | active/total subagents、current agent state |
+| Progress | plan step、completed/total、compact state |
+| Safety | approval mode、sandbox、integration degradation |
+
+模块丰富度不得进入 relay 热路径；所有数据源必须通过缓存状态快照驱动 renderer。
+
+### 7.0 Placement frontends
+
+```toml
+[display]
+placement = "auto" # auto | attached | bottom | off
+attach_side = "below" # above | below
+```
+
+- `attached`：主力体验，在 composer 附近合成 Codexline，并随输入框布局变化。
+- `bottom`：占用真实终端最后一行，提供最高兼容性。
+- `auto`：优先 attached；定位能力不可信或版本未知时立即回退 bottom。
+- `off`：关闭 Codexline 绘制但保留透明进程转发。
+
+原生 Codex status line 与 Codexline 同时显示会产生重复。配置器可以建议禁用
+`tui.status_line`，但修改前必须展示 diff、创建可恢复备份并获得明确确认；卸载时只在
+用户未自行修改该值的情况下恢复。Codexline 不得静默编辑 Codex 配置。
 
 ### 7.1 终端所有权
 

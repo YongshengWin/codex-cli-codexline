@@ -22,6 +22,11 @@ Codexline keeps the state that matters visible—model, context pressure, active
 work, agents, Git, permissions, and elapsed time—without modifying Codex or
 requiring tmux.
 
+Its quality bar is deliberately higher than the built-in footer: stronger
+visual hierarchy, richer live state, responsive layouts, polished themes, and
+clear degradation when a data source is unavailable. Recoloring the native
+fields is not the product.
+
 ## Why Codexline?
 
 | Stay oriented | Stay responsive | Stay compatible |
@@ -58,6 +63,17 @@ gpt-5.6 | RUN 8s | context 42% | main*
 | Safety | Permission mode, sandbox, and degraded integrations |
 
 Unknown data is hidden rather than rendered as a misleading zero.
+
+The primary product direction is an `attached` layout directly below the Codex
+composer. A compatibility-first `bottom` dock remains available, and `auto`
+falls back to it whenever attached positioning is not trustworthy.
+
+```text
+┌─ Codex composer ──────────────────────────────────────────────┐
+│ Implement {feature}                                          │
+└──────────────────────────────────────────────────────────────┘
+ Codex gpt-5.6 high │ ⟳ exec 8s │ ctx 42% │ ↑2 agents │ main *
+```
 
 ## Try the prototype
 

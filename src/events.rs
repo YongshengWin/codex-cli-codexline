@@ -81,7 +81,7 @@ pub fn emit_hook() -> Result<i32> {
 
 #[derive(Default)]
 struct RuntimeState {
-    active_agents: HashMap<String, AgentActivity>,
+    agents: HashMap<String, AgentActivity>,
     seen_agents: HashSet<String>,
     tools: Vec<ToolCount>,
     compactions: u16,
@@ -149,11 +149,15 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
             if let Some(id) = string(event, "agent_id") {
                 let kind = compact_agent(string(event, "agent_type").unwrap_or("agent"));
                 runtime.seen_agents.insert(id.into());
-                runtime.active_agents.insert(
+                runtime.agents.insert(
                     id.into(),
                     AgentActivity {
+                        id: id.into(),
                         kind,
                         started: Instant::now(),
+                        prompt: string(event, "prompt").map(sanitize_detail),
+                        message: None,
+                        active: true,
                     },
                 );
                 sync_agents(runtime, snapshot);
@@ -161,7 +165,10 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
         }
         "SubagentStop" => {
             if let Some(id) = string(event, "agent_id") {
-                runtime.active_agents.remove(id);
+                if let Some(agent) = runtime.agents.get_mut(id) {
+                    agent.active = false;
+                    agent.message = string(event, "last_assistant_message").map(sanitize_detail);
+                }
                 sync_agents(runtime, snapshot);
             }
         }
@@ -209,11 +216,18 @@ fn record_tool(tool: &str, runtime: &mut RuntimeState) {
 }
 
 fn sync_agents(runtime: &RuntimeState, snapshot: &mut StatusSnapshot) {
-    snapshot.agents = runtime.active_agents.values().cloned().collect();
+    snapshot.agents = runtime.agents.values().cloned().collect();
     snapshot
         .agents
         .sort_by(|left, right| left.kind.cmp(&right.kind));
-    snapshot.agents_active = Some(snapshot.agents.len().min(usize::from(u16::MAX)) as u16);
+    snapshot.agents_active = Some(
+        snapshot
+            .agents
+            .iter()
+            .filter(|agent| agent.active)
+            .count()
+            .min(usize::from(u16::MAX)) as u16,
+    );
     snapshot.agents_total = Some(runtime.seen_agents.len().min(usize::from(u16::MAX)) as u16);
 }
 
@@ -246,6 +260,10 @@ fn sanitize_label(value: &str, max: usize) -> String {
         .filter(|character| !character.is_control())
         .take(max)
         .collect()
+}
+
+fn sanitize_detail(value: &str) -> String {
+    sanitize_label(value, 160)
 }
 
 #[cfg(test)]

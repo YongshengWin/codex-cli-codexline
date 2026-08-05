@@ -155,7 +155,7 @@ fn prepare_pty(
     let (columns, rows) = crossterm::terminal::size()
         .context("could not read terminal size")
         .map_err(before)?;
-    let reserved_rows = u16::from(display.rows);
+    let mut reserved_rows = u16::from(display.rows);
     let child_rows = rows.saturating_sub(reserved_rows);
     let pair = native_pty_system()
         .openpty(PtySize {
@@ -204,6 +204,10 @@ fn prepare_pty(
         .then(|| AppServerSource::start(executable, Arc::clone(&snapshot)).ok())
         .flatten();
 
+    let mut renderer = StatusRenderer::new(display.clone(), Arc::clone(&snapshot));
+    let agent_panel = renderer.agent_panel();
+    let input_snapshot = Arc::clone(&snapshot);
+
     let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(after)?));
     let input_writer = Arc::clone(&writer);
     // Detached deliberately: a blocking terminal read cannot be cancelled portably. The
@@ -216,6 +220,15 @@ fn prepare_pty(
                 Ok(0) | Err(_) => break,
                 Ok(count) => count,
             };
+            let agent_count = input_snapshot
+                .read()
+                .map_or(0, |snapshot| snapshot.agents.len());
+            let handled = agent_panel.lock().map_or(true, |mut panel| {
+                panel.handle_input(&buffer[..count], agent_count)
+            });
+            if handled {
+                continue;
+            }
             let Ok(mut writer) = input_writer.lock() else {
                 break;
             };
@@ -246,7 +259,22 @@ fn prepare_pty(
         }
     });
     let mut stdout = io::stdout().lock();
-    let mut renderer = StatusRenderer::new(display.clone(), snapshot);
+    reserved_rows = renderer
+        .required_rows(columns)
+        .min(rows.saturating_sub(4).max(1));
+    if reserved_rows != u16::from(display.rows) {
+        pair.master
+            .resize(PtySize {
+                rows: rows.saturating_sub(reserved_rows),
+                cols: columns,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .map_err(after)?;
+        terminal
+            .update_reserved_rows(rows.saturating_sub(reserved_rows), reserved_rows)
+            .map_err(after)?;
+    }
     renderer.draw(&mut stdout, columns, rows).map_err(after)?;
     let mut last_size = (columns, rows);
     let mut last_draw = std::time::Instant::now();
@@ -288,6 +316,28 @@ fn prepare_pty(
             terminal
                 .update_reserved_rows(size.1.saturating_sub(reserved_rows), reserved_rows)
                 .map_err(after)?;
+        }
+        let wanted_rows = renderer
+            .required_rows(last_size.0)
+            .min(last_size.1.saturating_sub(4).max(1));
+        if wanted_rows != reserved_rows {
+            reserved_rows = wanted_rows;
+            pair.master
+                .resize(PtySize {
+                    rows: last_size.1.saturating_sub(reserved_rows),
+                    cols: last_size.0,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                })
+                .map_err(after)?;
+            terminal
+                .update_reserved_rows(last_size.1.saturating_sub(reserved_rows), reserved_rows)
+                .map_err(after)?;
+            renderer
+                .draw(&mut stdout, last_size.0, last_size.1)
+                .map_err(after)?;
+            stdout.flush().map_err(|error| after(error.into()))?;
+            last_draw = std::time::Instant::now();
         }
         if last_draw.elapsed() >= Duration::from_secs(1) {
             renderer

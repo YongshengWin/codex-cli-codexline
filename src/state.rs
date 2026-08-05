@@ -2,8 +2,12 @@ use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct AgentActivity {
+    pub id: String,
     pub kind: String,
     pub started: Instant,
+    pub prompt: Option<String>,
+    pub message: Option<String>,
+    pub active: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -94,12 +98,20 @@ impl StatusSnapshot {
             agents_total: Some(3),
             agents: vec![
                 AgentActivity {
+                    id: "agent-explore".into(),
                     kind: "explore".into(),
                     started: Instant::now(),
+                    prompt: Some("Trace app-server agent events".into()),
+                    message: Some("Inspecting protocol types".into()),
+                    active: true,
                 },
                 AgentActivity {
+                    id: "agent-worker".into(),
                     kind: "worker".into(),
                     started: Instant::now(),
+                    prompt: Some("Build the interactive inspector".into()),
+                    message: Some("Editing the renderer".into()),
+                    active: true,
                 },
             ],
             tools: vec![

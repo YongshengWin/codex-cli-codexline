@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket, accept, client};
 
-use crate::state::{RateLimitWindow, StatusSnapshot};
+use crate::state::{AgentActivity, RateLimitWindow, StatusSnapshot};
 
 pub struct AppServerSource {
     child: Child,
@@ -293,8 +293,129 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
                 apply_token_usage(usage, snapshot);
             }
         }
+        Some("thread/started") => {
+            if let Some(thread) = message.pointer("/params/thread")
+                && thread
+                    .get("parentThreadId")
+                    .is_some_and(|value| !value.is_null())
+                && let Some(id) = thread.get("id").and_then(Value::as_str)
+            {
+                let kind = thread
+                    .get("agentRole")
+                    .or_else(|| thread.get("agentNickname"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent");
+                upsert_agent(snapshot, id, kind, None);
+            }
+        }
+        Some("thread/status/changed") => {
+            if let (Some(id), Some(status)) = (
+                message.pointer("/params/threadId").and_then(Value::as_str),
+                message
+                    .pointer("/params/status/type")
+                    .and_then(Value::as_str),
+            ) {
+                set_agent_status(snapshot, id, status, None);
+            }
+        }
+        Some("item/started") | Some("item/completed") => {
+            if let Some(item) = message.pointer("/params/item") {
+                apply_agent_item(
+                    item,
+                    message.pointer("/params/threadId").and_then(Value::as_str),
+                    snapshot,
+                );
+            }
+        }
         _ => {}
     }
+}
+
+fn apply_agent_item(item: &Value, thread_id: Option<&str>, snapshot: &mut StatusSnapshot) {
+    match item.get("type").and_then(Value::as_str) {
+        Some("collabAgentToolCall") => {
+            let prompt = item.get("prompt").and_then(Value::as_str);
+            if let Some(receivers) = item.get("receiverThreadIds").and_then(Value::as_array) {
+                for id in receivers.iter().filter_map(Value::as_str) {
+                    upsert_agent(snapshot, id, "agent", prompt);
+                }
+            }
+            if let Some(states) = item.get("agentsStates").and_then(Value::as_object) {
+                for (id, state) in states {
+                    let status = state
+                        .get("status")
+                        .and_then(Value::as_str)
+                        .unwrap_or("running");
+                    let message = state.get("message").and_then(Value::as_str);
+                    set_agent_status(snapshot, id, status, message);
+                }
+            }
+        }
+        Some("agentMessage") => {
+            if let (Some(id), Some(text)) = (thread_id, item.get("text").and_then(Value::as_str))
+                && let Some(agent) = snapshot.agents.iter_mut().find(|agent| agent.id == id)
+            {
+                agent.message = Some(sanitize_agent_text(text));
+            }
+        }
+        _ => {}
+    }
+    sync_agent_counts(snapshot);
+}
+
+fn upsert_agent(snapshot: &mut StatusSnapshot, id: &str, kind: &str, prompt: Option<&str>) {
+    if let Some(agent) = snapshot.agents.iter_mut().find(|agent| agent.id == id) {
+        if agent.kind == "agent" && kind != "agent" {
+            agent.kind = sanitize_agent_text(kind);
+        }
+        if let Some(prompt) = prompt {
+            agent.prompt = Some(sanitize_agent_text(prompt));
+        }
+        agent.active = true;
+    } else {
+        snapshot.agents.push(AgentActivity {
+            id: id.into(),
+            kind: sanitize_agent_text(kind),
+            started: Instant::now(),
+            prompt: prompt.map(sanitize_agent_text),
+            message: None,
+            active: true,
+        });
+    }
+    sync_agent_counts(snapshot);
+}
+
+fn set_agent_status(snapshot: &mut StatusSnapshot, id: &str, status: &str, message: Option<&str>) {
+    if !snapshot.agents.iter().any(|agent| agent.id == id) {
+        upsert_agent(snapshot, id, "agent", None);
+    }
+    if let Some(agent) = snapshot.agents.iter_mut().find(|agent| agent.id == id) {
+        agent.active = matches!(status, "pendingInit" | "running" | "active");
+        if let Some(message) = message {
+            agent.message = Some(sanitize_agent_text(message));
+        }
+    }
+    sync_agent_counts(snapshot);
+}
+
+fn sync_agent_counts(snapshot: &mut StatusSnapshot) {
+    snapshot.agents_active = Some(
+        snapshot
+            .agents
+            .iter()
+            .filter(|agent| agent.active)
+            .count()
+            .min(usize::from(u16::MAX)) as u16,
+    );
+    snapshot.agents_total = Some(snapshot.agents.len().min(usize::from(u16::MAX)) as u16);
+}
+
+fn sanitize_agent_text(value: &str) -> String {
+    value
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(160)
+        .collect()
 }
 
 fn apply_rate_limits(value: &Value, snapshot: &mut StatusSnapshot) {
@@ -371,5 +492,41 @@ mod tests {
         );
         assert_eq!(snapshot.context_percent, Some(20));
         assert_eq!(snapshot.output_tokens, Some(10000));
+    }
+
+    #[test]
+    fn tracks_spawned_agent_status_and_latest_message() {
+        let mut snapshot = StatusSnapshot::default();
+        apply_message(
+            &json!({"method": "item/completed", "params": {
+                "threadId": "root", "turnId": "turn-1", "item": {
+                    "type": "collabAgentToolCall", "id": "item-1",
+                    "tool": "spawnAgent", "status": "completed",
+                    "senderThreadId": "root", "receiverThreadIds": ["child-1"],
+                    "prompt": "Inspect the renderer", "model": null,
+                    "reasoningEffort": null,
+                    "agentsStates": {"child-1": {"status": "running", "message": "Reading files"}}
+                }
+            }}),
+            &mut snapshot,
+        );
+        assert_eq!(snapshot.agents_active, Some(1));
+        assert_eq!(
+            snapshot.agents[0].prompt.as_deref(),
+            Some("Inspect the renderer")
+        );
+        assert_eq!(snapshot.agents[0].message.as_deref(), Some("Reading files"));
+
+        apply_message(
+            &json!({"method": "item/completed", "params": {
+                "threadId": "child-1", "turnId": "turn-2",
+                "item": {"type": "agentMessage", "id": "item-2", "text": "Found the layout", "phase": "final_answer", "memoryCitation": null}
+            }}),
+            &mut snapshot,
+        );
+        assert_eq!(
+            snapshot.agents[0].message.as_deref(),
+            Some("Found the layout")
+        );
     }
 }

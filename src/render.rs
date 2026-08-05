@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 
 use anyhow::Result;
@@ -27,10 +27,18 @@ impl TerminalGuard {
     }
 
     pub fn update_reserved_rows(&self, child_rows: u16, reserved_rows: u16) -> Result<()> {
+        let old_first = self.child_rows.get().saturating_add(1);
+        let old_last = old_first
+            .saturating_add(self.reserved_rows.get())
+            .saturating_sub(1);
         self.child_rows.set(child_rows);
         self.reserved_rows.set(reserved_rows);
         let mut stdout = io::stdout().lock();
-        write!(stdout, "\x1b[r\x1b[1;{child_rows}r")?;
+        write!(stdout, "\x1b7\x1b[r")?;
+        for row in old_first..=old_last {
+            write!(stdout, "\x1b[{row};1H\x1b[2K")?;
+        }
+        write!(stdout, "\x1b[1;{child_rows}r\x1b8")?;
         stdout.flush()?;
         Ok(())
     }
@@ -57,6 +65,50 @@ pub struct StatusRenderer {
     display: DisplayConfig,
     snapshot: Arc<RwLock<StatusSnapshot>>,
     started: Instant,
+    agent_panel: Arc<Mutex<AgentPanelState>>,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum AgentPanelMode {
+    #[default]
+    Passive,
+    List,
+    Detail,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct AgentPanelState {
+    mode: AgentPanelMode,
+    selected: usize,
+}
+
+impl AgentPanelState {
+    /// Returns true when the input belongs to the inspector and must not reach Codex.
+    pub fn handle_input(&mut self, input: &[u8], agent_count: usize) -> bool {
+        if self.mode == AgentPanelMode::Passive {
+            if input == [0x07] && agent_count > 0 {
+                self.mode = AgentPanelMode::List;
+                self.selected = self.selected.min(agent_count.saturating_sub(1));
+                return true;
+            }
+            return false;
+        }
+        if input == b"\x1b" {
+            self.mode = match self.mode {
+                AgentPanelMode::Detail => AgentPanelMode::List,
+                AgentPanelMode::List | AgentPanelMode::Passive => AgentPanelMode::Passive,
+            };
+        } else if matches!(input, b"\x1b[A" | b"\x1bOA") {
+            self.selected = self.selected.saturating_sub(1);
+        } else if matches!(input, b"\x1b[B" | b"\x1bOB") {
+            self.selected = (self.selected + 1).min(agent_count.saturating_sub(1));
+        } else if matches!(input, b"\r" | b"\n") && agent_count > 0 {
+            self.mode = AgentPanelMode::Detail;
+        } else if input == [0x07] {
+            self.mode = AgentPanelMode::Passive;
+        }
+        true
+    }
 }
 
 impl StatusRenderer {
@@ -65,7 +117,35 @@ impl StatusRenderer {
             display,
             snapshot,
             started: Instant::now(),
+            agent_panel: Arc::new(Mutex::new(AgentPanelState::default())),
         }
+    }
+
+    pub fn agent_panel(&self) -> Arc<Mutex<AgentPanelState>> {
+        Arc::clone(&self.agent_panel)
+    }
+
+    pub fn required_rows(&self, width: u16) -> u16 {
+        self.layouts(width).len().min(usize::from(u16::MAX)) as u16
+    }
+
+    fn layouts(&self, width: u16) -> Vec<Vec<(Segment, String)>> {
+        let snapshot = self.snapshot.read().map_or_else(
+            |poisoned| poisoned.into_inner().clone(),
+            |value| value.clone(),
+        );
+        let mut layouts = status_layouts(
+            width,
+            &self.display,
+            &snapshot,
+            self.started.elapsed().as_secs(),
+        );
+        let panel = self
+            .agent_panel
+            .lock()
+            .map_or_else(|poisoned| *poisoned.into_inner(), |value| *value);
+        layouts.extend(agent_panel_layouts(width, &snapshot, panel));
+        layouts
     }
 
     pub fn draw(&mut self, output: &mut impl Write, width: u16, rows: u16) -> Result<()> {
@@ -73,12 +153,8 @@ impl StatusRenderer {
             |poisoned| poisoned.into_inner().clone(),
             |value| value.clone(),
         );
-        let layouts = status_layouts(
-            width,
-            &self.display,
-            &snapshot,
-            self.started.elapsed().as_secs(),
-        );
+        let mut layouts = self.layouts(width);
+        layouts.truncate(rows.saturating_sub(4).max(1) as usize);
         let first_row = rows.saturating_sub(layouts.len() as u16).saturating_add(1);
         write!(output, "\x1b7\x1b[1;{}r", first_row.saturating_sub(1))?;
         for (offset, layout) in layouts.iter().enumerate() {
@@ -91,9 +167,119 @@ impl StatusRenderer {
     }
 }
 
+fn agent_panel_layouts(
+    width: u16,
+    snapshot: &StatusSnapshot,
+    mut panel: AgentPanelState,
+) -> Vec<Vec<(Segment, String)>> {
+    if snapshot.agents.is_empty() {
+        return Vec::new();
+    }
+    let mut agents = snapshot.agents.clone();
+    agents.sort_by(|left, right| {
+        right
+            .active
+            .cmp(&left.active)
+            .then_with(|| left.kind.cmp(&right.kind))
+    });
+    panel.selected = panel.selected.min(agents.len().saturating_sub(1));
+    let active = agents.iter().filter(|agent| agent.active).count();
+    let total = usize::from(snapshot.agents_total.unwrap_or(0)).max(agents.len());
+    let header = match panel.mode {
+        AgentPanelMode::Passive => {
+            format!("AGENTS {active}/{total} · Ctrl+G focus")
+        }
+        AgentPanelMode::List => format!(
+            "AGENTS {active}/{} · ↑↓ select · Enter view · Esc close",
+            total
+        ),
+        AgentPanelMode::Detail => {
+            let agent = &agents[panel.selected];
+            format!(
+                "{} {} · {} · Esc back",
+                if agent.active { "●" } else { "✓" },
+                agent.kind,
+                compact_duration(agent.started.elapsed().as_secs())
+            )
+        }
+    };
+    let mut rows = vec![panel_layout(Segment::Agents, header, width)];
+    match panel.mode {
+        AgentPanelMode::Passive | AgentPanelMode::List => {
+            let start = if panel.mode == AgentPanelMode::List {
+                panel.selected.saturating_sub(2)
+            } else {
+                0
+            };
+            for (index, agent) in agents.iter().enumerate().skip(start).take(3) {
+                let marker = if panel.mode == AgentPanelMode::List && index == panel.selected {
+                    "›"
+                } else {
+                    " "
+                };
+                let state = if agent.active { "●" } else { "✓" };
+                let detail = agent
+                    .message
+                    .as_deref()
+                    .or(agent.prompt.as_deref())
+                    .unwrap_or("working");
+                rows.push(panel_layout(
+                    Segment::Agents,
+                    format!(
+                        "{marker} {state} {} {} · {}",
+                        agent.kind,
+                        compact_duration(agent.started.elapsed().as_secs()),
+                        sanitize_dynamic(detail)
+                    ),
+                    width,
+                ));
+            }
+        }
+        AgentPanelMode::Detail => {
+            let agent = &agents[panel.selected];
+            rows.push(panel_layout(
+                Segment::Agents,
+                format!(
+                    "Goal   {}",
+                    agent.prompt.as_deref().unwrap_or("Waiting for agent goal")
+                ),
+                width,
+            ));
+            rows.push(panel_layout(
+                Segment::Tokens,
+                format!(
+                    "Latest {}",
+                    agent
+                        .message
+                        .as_deref()
+                        .unwrap_or("No activity message yet")
+                ),
+                width,
+            ));
+        }
+    }
+    rows
+}
+
+fn panel_layout(segment: Segment, text: String, width: u16) -> Vec<(Segment, String)> {
+    let limit = usize::from(width).saturating_sub(2);
+    let mut text = sanitize_dynamic(&text);
+    while UnicodeWidthStr::width(text.as_str()) > limit {
+        text.pop();
+    }
+    vec![(segment, text)]
+}
+
 #[cfg(test)]
 pub fn preview_line(width: u16, display: &DisplayConfig) -> String {
-    status_layouts(width, display, &StatusSnapshot::showcase(), 8)
+    let snapshot = StatusSnapshot::showcase();
+    let mut layouts = status_layouts(width, display, &snapshot, 8);
+    layouts.extend(agent_panel_layouts(
+        width,
+        &snapshot,
+        AgentPanelState::default(),
+    ));
+    layouts
         .iter()
         .map(|layout| plain_row(layout, width as usize, display))
         .collect::<Vec<_>>()
@@ -102,7 +288,12 @@ pub fn preview_line(width: u16, display: &DisplayConfig) -> String {
 
 pub fn preview_ansi(width: u16, display: &DisplayConfig) -> Result<String> {
     let snapshot = StatusSnapshot::showcase();
-    let layouts = status_layouts(width, display, &snapshot, 8);
+    let mut layouts = status_layouts(width, display, &snapshot, 8);
+    layouts.extend(agent_panel_layouts(
+        width,
+        &snapshot,
+        AgentPanelState::default(),
+    ));
     let mut output = Vec::new();
     for (index, layout) in layouts.iter().enumerate() {
         if index > 0 {
@@ -128,6 +319,7 @@ fn status_layouts(
     let segments = display
         .segments
         .iter()
+        .filter(|segment| !(**segment == Segment::Agents && !snapshot.agents.is_empty()))
         .filter_map(|segment| {
             segment_text(*segment, spinner, &cwd, elapsed, snapshot).map(|text| (*segment, text))
         })
@@ -683,7 +875,7 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 
 #[cfg(test)]
 mod tests {
-    use super::{preview_ansi, preview_line};
+    use super::{AgentPanelState, agent_panel_layouts, preview_ansi, preview_line};
     use crate::config::{DisplayConfig, Theme};
     use unicode_width::UnicodeWidthStr;
 
@@ -734,5 +926,21 @@ mod tests {
         )
         .unwrap();
         assert!(fixed_dark.contains("\x1b[48;"));
+    }
+
+    #[test]
+    fn agent_panel_is_visible_and_keyboard_driven() {
+        let snapshot = crate::state::StatusSnapshot::showcase();
+        let mut panel = AgentPanelState::default();
+        let passive = agent_panel_layouts(100, &snapshot, panel);
+        assert!(passive[0][0].1.contains("Ctrl+G focus"));
+        assert!(passive.iter().any(|row| row[0].1.contains("explore")));
+
+        assert!(panel.handle_input(&[0x07], snapshot.agents.len()));
+        assert!(panel.handle_input(b"\x1b[B", snapshot.agents.len()));
+        assert!(panel.handle_input(b"\r", snapshot.agents.len()));
+        let detail = agent_panel_layouts(100, &snapshot, panel);
+        assert!(detail.iter().any(|row| row[0].1.starts_with("Goal")));
+        assert!(detail.iter().any(|row| row[0].1.starts_with("Latest")));
     }
 }

@@ -180,6 +180,12 @@ fixed `codex-dark` and `codex-light` themes paint their own backgrounds.
 `preview` uses clearly labelled simulated state to demonstrate the responsive
 layout.
 
+When subagents are present, Codexline automatically expands a read-only Agent
+Inspector below the regular HUD. It shows up to three live agent rows without
+capturing normal input. Press the visible `Ctrl+G focus` action, use `↑/↓` to
+select, `Enter` to view the agent goal and latest official app-server message,
+and `Esc` to go back or close the inspector.
+
 `rate-limits` is populated through a separate, read-only official Codex
 app-server process. It shows the available 5-hour/weekly windows, remaining
 percentage, explicit `reset 2d 5h` countdown, and reset credits. Disable that process without

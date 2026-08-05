@@ -347,6 +347,18 @@ East Asian Width 计算，不能用字符串字节数。
 及用户主题一致；固定背景主题仅在显式选择时启用。默认主题优先可读性，不使用
 连续动画和大量 emoji。
 
+### 7.4 Agent Inspector
+
+当官方 app-server 或 Hooks 报告子代理后，`bottom` 前端自动在状态栏下展开最多三条
+代理行，显示运行/完成状态、角色、耗时和最新活动。被动展示不接管任何按键；行首
+明确显示 `Ctrl+G focus`。用户进入焦点后，`↑/↓` 选择、`Enter` 打开只读详情、
+`Esc` 返回或关闭。详情只展示官方协议提供的 prompt、状态和 agent message，不读取
+rollout JSONL 或私有 SQLite。
+
+输入路由只识别独立的 `Ctrl+G` 以及面板已聚焦时的导航键。其他时候终端字节必须
+原样转发给 Codex。面板行数变化通过 PTY resize 调整保留区；小终端优先保留 Codex
+至少四行可用区域并裁剪 Inspector。
+
 ## 8. 配置体验
 
 配置路径遵循平台规范：

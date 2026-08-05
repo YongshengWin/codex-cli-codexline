@@ -1,0 +1,16 @@
+{
+  "description": "Send supported Codex lifecycle events to an active Codexline process.",
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "PreCompact": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "PostCompact": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "\"$PLUGIN_ROOT/hooks/codexline-hook.sh\"", "commandWindows": "\"%PLUGIN_ROOT%\\hooks\\codexline-hook.cmd\"", "timeout": 2 }] }]
+  }
+}

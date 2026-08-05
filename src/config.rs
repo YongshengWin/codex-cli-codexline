@@ -72,7 +72,7 @@ pub struct DisplayConfig {
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
-            theme: Theme::CodexDark,
+            theme: Theme::Inherit,
             glyphs: Glyphs::Unicode,
             refresh_hz: 8,
             rows: 3,
@@ -83,11 +83,14 @@ impl Default for DisplayConfig {
                 Segment::Context,
                 Segment::Git,
                 Segment::Worktree,
+                Segment::Tools,
                 Segment::Agents,
                 Segment::Plan,
+                Segment::Compactions,
                 Segment::Safety,
                 Segment::Elapsed,
                 Segment::Cwd,
+                Segment::Status,
             ],
             separator: " │ ".into(),
         }
@@ -103,8 +106,10 @@ pub enum Segment {
     Context,
     Git,
     Worktree,
+    Tools,
     Agents,
     Plan,
+    Compactions,
     Safety,
     Elapsed,
     Cwd,
@@ -115,6 +120,7 @@ pub enum Segment {
 #[serde(rename_all = "kebab-case")]
 pub enum Theme {
     #[default]
+    Inherit,
     CodexDark,
     CodexLight,
     Minimal,

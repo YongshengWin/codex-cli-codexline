@@ -1,4 +1,5 @@
 use std::io::{self, Write};
+use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
 use anyhow::Result;
@@ -54,12 +55,12 @@ impl Drop for TerminalGuard {
 
 pub struct StatusRenderer {
     display: DisplayConfig,
-    snapshot: StatusSnapshot,
+    snapshot: Arc<RwLock<StatusSnapshot>>,
     started: Instant,
 }
 
 impl StatusRenderer {
-    pub fn new(display: DisplayConfig, snapshot: StatusSnapshot) -> Self {
+    pub fn new(display: DisplayConfig, snapshot: Arc<RwLock<StatusSnapshot>>) -> Self {
         Self {
             display,
             snapshot,
@@ -68,10 +69,14 @@ impl StatusRenderer {
     }
 
     pub fn draw(&mut self, output: &mut impl Write, width: u16, rows: u16) -> Result<()> {
+        let snapshot = self.snapshot.read().map_or_else(
+            |poisoned| poisoned.into_inner().clone(),
+            |value| value.clone(),
+        );
         let layouts = status_layouts(
             width,
             &self.display,
-            &self.snapshot,
+            &snapshot,
             self.started.elapsed().as_secs(),
         );
         let first_row = rows.saturating_sub(layouts.len() as u16).saturating_add(1);
@@ -79,13 +84,7 @@ impl StatusRenderer {
         for (offset, layout) in layouts.iter().enumerate() {
             let row = first_row.saturating_add(offset as u16);
             write!(output, "\x1b[{row};1H\x1b[2K")?;
-            write_styled_row(
-                output,
-                layout,
-                width as usize,
-                &self.display,
-                &self.snapshot,
-            )?;
+            write_styled_row(output, layout, width as usize, &self.display, &snapshot)?;
         }
         write!(output, "\x1b[0m\x1b8")?;
         Ok(())
@@ -164,7 +163,9 @@ fn status_layouts(
                     segment,
                     Segment::Context
                         | Segment::Agents
+                        | Segment::Tools
                         | Segment::Plan
+                        | Segment::Compactions
                         | Segment::Safety
                         | Segment::Status
                 )
@@ -269,29 +270,76 @@ fn segment_text(
             .git_branch
             .as_ref()
             .map(|branch| git_text(branch, snapshot)),
-        Segment::Worktree => snapshot.worktree.as_ref().map(|worktree| {
-            format!(
-                "wt:{}{}",
-                sanitize_dynamic(worktree),
-                if snapshot.linked_worktree == Some(true) {
-                    " ↗"
-                } else {
-                    ""
-                }
-            )
-        }),
-        Segment::Agents => match (snapshot.agents_active, snapshot.agents_total) {
-            (Some(active), Some(total)) => Some(format!("↑{active}/{total} agents")),
-            _ => None,
-        },
+        Segment::Worktree => snapshot
+            .worktree
+            .as_ref()
+            .filter(|_| snapshot.linked_worktree == Some(true))
+            .map(|worktree| format!("wt:{} ↗", sanitize_dynamic(worktree))),
+        Segment::Tools => tools_text(snapshot),
+        Segment::Agents => agents_text(snapshot),
         Segment::Plan => match (snapshot.plan_completed, snapshot.plan_total) {
             (Some(completed), Some(total)) => Some(format!("{completed}/{total} plan")),
             _ => None,
         },
+        Segment::Compactions => snapshot
+            .compactions
+            .filter(|count| *count > 0)
+            .map(|count| format!("compact ×{count}")),
         Segment::Safety => snapshot.safety.as_deref().map(sanitize_dynamic),
         Segment::Elapsed => Some(format!("{elapsed}s")),
         Segment::Cwd => Some(cwd.to_owned()),
-        Segment::Status => Some("healthy".into()),
+        Segment::Status => Some(if snapshot.events_active {
+            "hooks live".into()
+        } else {
+            "local probes".into()
+        }),
+    }
+}
+
+fn tools_text(snapshot: &StatusSnapshot) -> Option<String> {
+    if snapshot.tools.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "tools: {}",
+        snapshot
+            .tools
+            .iter()
+            .take(3)
+            .map(|tool| format!("{} ×{}", sanitize_dynamic(&tool.name), tool.count))
+            .collect::<Vec<_>>()
+            .join(" · ")
+    ))
+}
+
+fn agents_text(snapshot: &StatusSnapshot) -> Option<String> {
+    if !snapshot.agents.is_empty() {
+        return Some(format!(
+            "agents: {}",
+            snapshot
+                .agents
+                .iter()
+                .take(2)
+                .map(|agent| format!(
+                    "{} {}",
+                    sanitize_dynamic(&agent.kind),
+                    compact_duration(agent.started.elapsed().as_secs())
+                ))
+                .collect::<Vec<_>>()
+                .join(" · ")
+        ));
+    }
+    match (snapshot.agents_active, snapshot.agents_total) {
+        (Some(active), Some(total)) if total > 0 => Some(format!("agents {active}/{total}")),
+        _ => None,
+    }
+}
+
+fn compact_duration(seconds: u64) -> String {
+    if seconds < 60 {
+        format!("{seconds}s")
+    } else {
+        format!("{}m{:02}s", seconds / 60, seconds % 60)
     }
 }
 
@@ -345,9 +393,11 @@ fn segment_priority(segment: Segment) -> u8 {
         Segment::Model => 90,
         Segment::Git => 85,
         Segment::Worktree => 82,
+        Segment::Tools => 78,
         Segment::App => 80,
         Segment::Agents => 70,
         Segment::Plan => 65,
+        Segment::Compactions => 62,
         Segment::Safety => 60,
         Segment::Elapsed => 50,
         Segment::Cwd => 40,
@@ -374,6 +424,7 @@ fn fit(mut text: String, width: usize) -> String {
 
 fn theme_base(theme: Theme) -> &'static str {
     match theme {
+        Theme::Inherit => "\x1b[0m",
         Theme::CodexDark => "\x1b[0m\x1b[48;2;17;20;22m\x1b[38;2;214;222;217m",
         Theme::CodexLight => "\x1b[0m\x1b[48;2;238;242;239m\x1b[38;2;35;42;38m",
         Theme::Minimal | Theme::Mono => "\x1b[0m",
@@ -382,6 +433,7 @@ fn theme_base(theme: Theme) -> &'static str {
 
 fn theme_separator(theme: Theme) -> &'static str {
     match theme {
+        Theme::Inherit => "\x1b[2m",
         Theme::CodexDark => "\x1b[38;2;74;85;79m",
         Theme::CodexLight => "\x1b[38;2;153;164;157m",
         Theme::Minimal => "\x1b[2m",
@@ -399,6 +451,21 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
             _ => "\x1b[2m",
         };
     }
+    if matches!(theme, Theme::Inherit) {
+        return match segment {
+            Segment::App => "\x1b[1;32m",
+            Segment::Model | Segment::Agents | Segment::Tools => "\x1b[36m",
+            Segment::Work => "\x1b[1;33m",
+            Segment::Context => match snapshot.context_percent.unwrap_or(0) {
+                80..=u8::MAX => "\x1b[1;31m",
+                60..=79 => "\x1b[1;33m",
+                _ => "\x1b[32m",
+            },
+            Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => "\x1b[35m",
+            Segment::Safety => "\x1b[31m",
+            Segment::Elapsed | Segment::Cwd | Segment::Status => "\x1b[2m",
+        };
+    }
     let dark = matches!(theme, Theme::CodexDark);
     match segment {
         Segment::App => {
@@ -408,7 +475,7 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
                 "\x1b[1m\x1b[38;2;17;128;82m"
             }
         }
-        Segment::Model | Segment::Agents => {
+        Segment::Model | Segment::Agents | Segment::Tools => {
             if dark {
                 "\x1b[38;2;139;233;253m"
             } else {
@@ -428,7 +495,7 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
             _ if dark => "\x1b[38;2;110;231;168m",
             _ => "\x1b[38;2;17;128;82m",
         },
-        Segment::Git | Segment::Worktree | Segment::Plan => {
+        Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => {
             if dark {
                 "\x1b[38;2;196;167;231m"
             } else {
@@ -454,8 +521,8 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 
 #[cfg(test)]
 mod tests {
-    use super::preview_line;
-    use crate::config::DisplayConfig;
+    use super::{preview_ansi, preview_line};
+    use crate::config::{DisplayConfig, Theme};
     use unicode_width::UnicodeWidthStr;
 
     #[test]
@@ -478,5 +545,21 @@ mod tests {
         let line = preview_line(120, &display);
         assert!(line.contains("8s :: ● Codex"));
         assert!(!line.contains("companion active"));
+    }
+
+    #[test]
+    fn inherit_theme_never_paints_a_background() {
+        let inherited = preview_ansi(100, &DisplayConfig::default()).unwrap();
+        assert!(!inherited.contains("\x1b[48;"));
+
+        let fixed_dark = preview_ansi(
+            100,
+            &DisplayConfig {
+                theme: Theme::CodexDark,
+                ..DisplayConfig::default()
+            },
+        )
+        .unwrap();
+        assert!(fixed_dark.contains("\x1b[48;"));
     }
 }

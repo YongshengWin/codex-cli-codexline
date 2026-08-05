@@ -1,3 +1,17 @@
+use std::time::Instant;
+
+#[derive(Debug, Clone)]
+pub struct AgentActivity {
+    pub kind: String,
+    pub started: Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolCount {
+    pub name: String,
+    pub count: u16,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StatusSnapshot {
     pub model: Option<String>,
@@ -14,9 +28,14 @@ pub struct StatusSnapshot {
     pub linked_worktree: Option<bool>,
     pub agents_active: Option<u16>,
     pub agents_total: Option<u16>,
+    pub agents: Vec<AgentActivity>,
+    pub tools: Vec<ToolCount>,
     pub plan_completed: Option<u16>,
     pub plan_total: Option<u16>,
+    pub compactions: Option<u16>,
     pub safety: Option<String>,
+    pub session_id: Option<String>,
+    pub events_active: bool,
 }
 
 impl StatusSnapshot {
@@ -36,9 +55,32 @@ impl StatusSnapshot {
             linked_worktree: Some(true),
             agents_active: Some(2),
             agents_total: Some(3),
+            agents: vec![
+                AgentActivity {
+                    kind: "explore".into(),
+                    started: Instant::now(),
+                },
+                AgentActivity {
+                    kind: "worker".into(),
+                    started: Instant::now(),
+                },
+            ],
+            tools: vec![
+                ToolCount {
+                    name: "exec".into(),
+                    count: 3,
+                },
+                ToolCount {
+                    name: "patch".into(),
+                    count: 2,
+                },
+            ],
             plan_completed: Some(2),
             plan_total: Some(4),
+            compactions: Some(1),
             safety: Some("workspace · ask".into()),
+            session_id: Some("thr_showcase".into()),
+            events_active: true,
         }
     }
 }

@@ -158,24 +158,28 @@ The prototype bottom dock supports configurable segment order and visibility in
 
 ```toml
 [display]
-theme = "codex-dark"
+theme = "inherit" # transparent background; uses the terminal palette
 glyphs = "unicode"
 refresh_hz = 8
 rows = 3
 segments = [
-  "app", "model", "work", "context", "git", "worktree", "agents", "plan",
-  "safety", "elapsed", "cwd"
+  "app", "model", "work", "context", "git", "worktree", "tools", "agents",
+  "plan", "compactions", "safety", "elapsed", "cwd", "status"
 ]
 separator = " │ "
 ```
 
 Available segments are `app`, `model`, `work`, `context`, `git`, `worktree`,
-`agents`, `plan`, `safety`, `elapsed`, `cwd`, and `status`. Remove a name to hide it or
-reorder the array to move it. `preview` uses clearly labelled simulated state
-to demonstrate the complete responsive layout. Live rendering currently fills
-model/reasoning, ready state, Git, safety, elapsed time, and directory from
-local supported sources; unavailable context/agent/plan fields are hidden
-rather than invented.
+`tools`, `agents`, `plan`, `compactions`, `safety`, `elapsed`, `cwd`, and
+`status`. Remove a name to hide it or reorder the array to move it. `inherit`
+never paints a background and maps semantic colors through the terminal palette;
+the fixed `codex-dark` and `codex-light` themes remain optional. `preview` uses
+clearly labelled simulated state to demonstrate the responsive layout.
+
+With the optional local `codexline-events` plugin trusted, the HUD receives
+tool, subagent, plan, approval, and compaction events from official Codex Hooks.
+Without it, those unavailable fields remain hidden and Codexline falls back to
+model, Git, worktree, safety, elapsed time, and directory probes.
 
 Planned commands and extensions:
 
@@ -195,7 +199,7 @@ mode = "shim" # shim | explicit
 bypass_flag = "--no-companion"
 
 [display]
-theme = "codex-dark"
+theme = "inherit"
 glyphs = "unicode"
 refresh_hz = 8
 
@@ -275,6 +279,18 @@ mode skips the shim entirely.
 app-server support is optional. Failure falls back to Hooks, then local-only
 state, without preventing Codex from starting.
 
+For local development, add and install the bundled event adapter, then review
+and trust its commands from `/hooks` in a new Codex session:
+
+```text
+codex plugin marketplace add /absolute/path/to/codex-cli-statusline/integrations
+codex plugin add codexline-events@codexline-local
+```
+
+The adapter is inert unless Codex was launched by Codexline; event datagrams are
+loopback-only, session-token authenticated, bounded, and never contain transcript
+contents in Codexline state.
+
 ## Compatibility target
 
 | Environment | Display backend | Fallback |
@@ -326,7 +342,7 @@ The invariant is simple: **Codex must remain usable when Codexline fails.**
 - [x] GitHub README visual direction
 - [x] M1 prototype — PTY/ConPTY launch, resize, status row, direct fallback
 - [ ] M1 hardening — signals, terminal-mode fixtures, Windows verification
-- [ ] M2 — Codex Hooks plugin and state engine
+- [x] M2 — Codex Hooks plugin and state engine
 - [ ] M3 — app-server enhancement, modules, themes, and live configuration
 - [ ] M4 — signed cross-platform installers, compatibility matrix, and `1.0`
 

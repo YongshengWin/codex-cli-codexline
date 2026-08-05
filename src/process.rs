@@ -4,7 +4,7 @@ use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::mpsc::{self, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -12,6 +12,7 @@ use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 use crate::config::DisplayConfig;
+use crate::events::EventServer;
 use crate::render::{StatusRenderer, TerminalGuard};
 use crate::state::StatusSnapshot;
 
@@ -153,9 +154,19 @@ fn prepare_pty(
     // Enter raw mode before spawning so any failure here is safe to fall back from.
     let terminal = TerminalGuard::enter(child_rows, reserved_rows).map_err(before)?;
 
+    let snapshot = Arc::new(RwLock::new(snapshot));
+    let event_server = EventServer::start(Arc::clone(&snapshot)).ok();
+
     let mut command = CommandBuilder::new(executable);
     command.args(args);
     command.env("CODEXLINE_ACTIVE", "1");
+    if let Some(server) = &event_server {
+        command.env("CODEXLINE_EVENT_ENDPOINT", server.endpoint());
+        command.env("CODEXLINE_EVENT_TOKEN", server.token());
+        if let Ok(current_exe) = std::env::current_exe() {
+            command.env("CODEXLINE_HOOK_BIN", current_exe);
+        }
+    }
     let mut child = pair
         .slave
         .spawn_command(command)

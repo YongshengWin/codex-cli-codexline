@@ -33,6 +33,9 @@ enum Command {
     },
     /// Diagnose Codex discovery and terminal capabilities.
     Doctor,
+    /// Receive one Codex lifecycle hook event.
+    #[command(hide = true)]
+    Hook,
 }
 
 pub fn run() -> Result<i32> {
@@ -45,6 +48,7 @@ pub fn run() -> Result<i32> {
         Some(Command::Config) => configure(),
         Some(Command::Preview { width }) => preview(width),
         Some(Command::Doctor) => doctor(),
+        Some(Command::Hook) => crate::events::emit_hook(),
         None => run_codex(Vec::new()),
     }
 }
@@ -179,6 +183,8 @@ fn configure() -> Result<i32> {
             Segment::Context,
             Segment::Git,
             Segment::Worktree,
+            Segment::Tools,
+            Segment::Agents,
             Segment::Elapsed,
         ],
         "3" => vec![Segment::Work, Segment::Context, Segment::Git],
@@ -199,10 +205,11 @@ fn configure() -> Result<i32> {
     );
 
     println!("\nCodexline setup · Theme (4/5)\n");
-    println!("  1  Codex Dark");
-    println!("  2  Codex Light");
-    println!("  3  Minimal");
-    println!("  4  Mono");
+    println!("  1  Inherit terminal theme (recommended)");
+    println!("  2  Codex Dark");
+    println!("  3  Codex Light");
+    println!("  4  Minimal");
+    println!("  5  Mono");
     let theme_default = theme_number(config.display.theme);
     let theme = prompt(&format!("Theme [{theme_default}]: "))?;
     config.display.theme = match if theme.is_empty() {
@@ -210,11 +217,12 @@ fn configure() -> Result<i32> {
     } else {
         theme.as_str()
     } {
-        "1" => Theme::CodexDark,
-        "2" => Theme::CodexLight,
-        "3" => Theme::Minimal,
-        "4" => Theme::Mono,
-        _ => anyhow::bail!("expected a theme from 1 to 4; no changes were saved"),
+        "1" => Theme::Inherit,
+        "2" => Theme::CodexDark,
+        "3" => Theme::CodexLight,
+        "4" => Theme::Minimal,
+        "5" => Theme::Mono,
+        _ => anyhow::bail!("expected a theme from 1 to 5; no changes were saved"),
     };
     let glyph_default = match config.display.glyphs {
         Glyphs::Unicode => "1",
@@ -290,11 +298,14 @@ fn full_segments() -> Vec<Segment> {
         Segment::Context,
         Segment::Git,
         Segment::Worktree,
+        Segment::Tools,
         Segment::Agents,
         Segment::Plan,
+        Segment::Compactions,
         Segment::Safety,
         Segment::Elapsed,
         Segment::Cwd,
+        Segment::Status,
     ]
 }
 
@@ -309,6 +320,8 @@ fn preset_number(segments: &[Segment]) -> &'static str {
             Segment::Context,
             Segment::Git,
             Segment::Worktree,
+            Segment::Tools,
+            Segment::Agents,
             Segment::Elapsed,
         ]
     {
@@ -331,7 +344,7 @@ fn print_module_choices(selected: &[Segment]) {
     }
 }
 
-fn module_choices() -> [(u8, Segment, &'static str); 12] {
+fn module_choices() -> [(u8, Segment, &'static str); 14] {
     [
         (1, Segment::App, "App       Codex identity"),
         (2, Segment::Model, "Model     Model and reasoning"),
@@ -343,16 +356,22 @@ fn module_choices() -> [(u8, Segment, &'static str); 12] {
             Segment::Worktree,
             "Worktree  Name and linked-worktree state",
         ),
+        (7, Segment::Tools, "Tools     Current and recent activity"),
         (
-            7,
+            8,
             Segment::Agents,
             "Agents    Roles, state, and elapsed time",
         ),
-        (8, Segment::Plan, "Plan      Current plan progress"),
-        (9, Segment::Safety, "Safety    Sandbox and approval mode"),
-        (10, Segment::Elapsed, "Elapsed   Session timer"),
-        (11, Segment::Cwd, "Directory Current workspace"),
-        (12, Segment::Status, "Status    Companion health"),
+        (9, Segment::Plan, "Plan      Current plan progress"),
+        (
+            10,
+            Segment::Compactions,
+            "Compact   Context compaction count",
+        ),
+        (11, Segment::Safety, "Safety    Sandbox and approval mode"),
+        (12, Segment::Elapsed, "Elapsed   Session timer"),
+        (13, Segment::Cwd, "Directory Current workspace"),
+        (14, Segment::Status, "Status    Live data source health"),
     ]
 }
 
@@ -377,10 +396,11 @@ fn toggle_segments(selected: &mut Vec<Segment>, input: &str) -> Result<()> {
 
 fn theme_number(theme: Theme) -> &'static str {
     match theme {
-        Theme::CodexDark => "1",
-        Theme::CodexLight => "2",
-        Theme::Minimal => "3",
-        Theme::Mono => "4",
+        Theme::Inherit => "1",
+        Theme::CodexDark => "2",
+        Theme::CodexLight => "3",
+        Theme::Minimal => "4",
+        Theme::Mono => "5",
     }
 }
 
@@ -400,7 +420,7 @@ mod tests {
     fn presets_and_module_toggles_are_deterministic() {
         let mut segments = vec![Segment::Work, Segment::Context, Segment::Git];
         assert_eq!(preset_number(&segments), "3");
-        toggle_segments(&mut segments, "4 11").unwrap();
+        toggle_segments(&mut segments, "4 13").unwrap();
         assert_eq!(segments, [Segment::Work, Segment::Git, Segment::Cwd]);
         assert_eq!(preset_number(&segments), "4");
     }

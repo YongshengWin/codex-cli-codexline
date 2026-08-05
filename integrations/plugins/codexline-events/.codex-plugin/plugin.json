@@ -1,0 +1,19 @@
+{
+  "name": "codexline-events",
+  "version": "0.1.0",
+  "description": "Streams supported Codex lifecycle events to the local Codexline companion.",
+  "author": {
+    "name": "Codexline contributors"
+  },
+  "license": "MIT",
+  "keywords": ["codex", "statusline", "hooks", "terminal"],
+  "interface": {
+    "displayName": "Codexline Events",
+    "shortDescription": "Live tools, agents, plans, approvals, and compaction events.",
+    "longDescription": "A local-only event adapter for Codexline. It forwards supported lifecycle hook payloads to the active companion process and is inert when Codexline is not running.",
+    "developerName": "Codexline contributors",
+    "category": "Productivity",
+    "capabilities": ["Lifecycle hooks", "Local-only telemetry"],
+    "defaultPrompt": "Show Codexline event adapter status and setup guidance."
+  }
+}

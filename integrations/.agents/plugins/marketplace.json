@@ -1,0 +1,20 @@
+{
+  "name": "codexline-local",
+  "interface": {
+    "displayName": "Codexline Local Development"
+  },
+  "plugins": [
+    {
+      "name": "codexline-events",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codexline-events"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

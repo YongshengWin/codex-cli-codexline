@@ -12,12 +12,28 @@ pub struct ToolCount {
     pub count: u16,
 }
 
+#[derive(Debug, Clone)]
+pub struct RateLimitWindow {
+    pub used_percent: u8,
+    pub window_minutes: Option<u64>,
+    pub resets_at: Option<u64>,
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct StatusSnapshot {
     pub model: Option<String>,
     pub reasoning: Option<String>,
     pub work: Option<String>,
     pub context_percent: Option<u8>,
+    pub context_used: Option<u64>,
+    pub context_window: Option<u64>,
+    pub input_tokens: Option<u64>,
+    pub cached_input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
+    pub rate_limits: Vec<RateLimitWindow>,
+    pub reset_credits: Option<u16>,
+    pub cwd: Option<String>,
+    pub project_root: Option<String>,
     pub git_branch: Option<String>,
     pub git_dirty: Option<bool>,
     pub git_staged: Option<u16>,
@@ -36,6 +52,7 @@ pub struct StatusSnapshot {
     pub safety: Option<String>,
     pub session_id: Option<String>,
     pub events_active: bool,
+    pub app_server_active: bool,
 }
 
 impl StatusSnapshot {
@@ -45,6 +62,26 @@ impl StatusSnapshot {
             reasoning: Some("high".into()),
             work: Some("exec 8s".into()),
             context_percent: Some(42),
+            context_used: Some(84_000),
+            context_window: Some(200_000),
+            input_tokens: Some(72_400),
+            cached_input_tokens: Some(51_200),
+            output_tokens: Some(8_600),
+            rate_limits: vec![
+                RateLimitWindow {
+                    used_percent: 34,
+                    window_minutes: Some(300),
+                    resets_at: None,
+                },
+                RateLimitWindow {
+                    used_percent: 65,
+                    window_minutes: Some(10_080),
+                    resets_at: None,
+                },
+            ],
+            reset_credits: Some(1),
+            cwd: Some("~/pro/codex-cli-statusline".into()),
+            project_root: Some("~/pro/codex-cli-statusline".into()),
             git_branch: Some("feat/statusline".into()),
             git_dirty: Some(true),
             git_staged: Some(1),
@@ -81,6 +118,7 @@ impl StatusSnapshot {
             safety: Some("workspace · ask".into()),
             session_id: Some("thr_showcase".into()),
             events_active: true,
+            app_server_active: true,
         }
     }
 }

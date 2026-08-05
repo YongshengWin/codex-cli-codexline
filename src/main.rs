@@ -1,3 +1,4 @@
+mod app_server;
 mod cli;
 mod config;
 mod events;

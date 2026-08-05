@@ -123,13 +123,7 @@ fn status_layouts(
         Glyphs::Ascii => ">",
         Glyphs::Unicode => "●",
     };
-    let cwd = std::env::current_dir()
-        .ok()
-        .and_then(|path| {
-            path.file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-        })
-        .unwrap_or_else(|| "workspace".into());
+    let cwd = workspace_path(snapshot);
     let cwd = sanitize_dynamic(&cwd);
     let segments = display
         .segments
@@ -162,6 +156,8 @@ fn status_layouts(
                 matches!(
                     segment,
                     Segment::Context
+                        | Segment::Tokens
+                        | Segment::RateLimits
                         | Segment::Agents
                         | Segment::Tools
                         | Segment::Plan
@@ -265,7 +261,9 @@ fn segment_text(
                 None => model.clone(),
             }),
         Segment::Work => snapshot.work.clone(),
-        Segment::Context => snapshot.context_percent.map(context_bar),
+        Segment::Context => context_text(snapshot),
+        Segment::Tokens => token_text(snapshot),
+        Segment::RateLimits => rate_limits_text(snapshot),
         Segment::Git => snapshot
             .git_branch
             .as_ref()
@@ -288,11 +286,137 @@ fn segment_text(
         Segment::Safety => snapshot.safety.as_deref().map(sanitize_dynamic),
         Segment::Elapsed => Some(format!("{elapsed}s")),
         Segment::Cwd => Some(cwd.to_owned()),
-        Segment::Status => Some(if snapshot.events_active {
+        Segment::Status => Some(if snapshot.events_active && snapshot.app_server_active {
+            "hooks + app-server".into()
+        } else if snapshot.app_server_active {
+            "app-server live".into()
+        } else if snapshot.events_active {
             "hooks live".into()
         } else {
             "local probes".into()
         }),
+    }
+}
+
+fn compact_path(value: &str) -> String {
+    let value = sanitize_dynamic(value);
+    let Some(home) = directories::BaseDirs::new() else {
+        return value;
+    };
+    let home = home.home_dir().to_string_lossy();
+    if value == home {
+        "~".into()
+    } else if let Some(rest) = value
+        .strip_prefix(home.as_ref())
+        .and_then(|v| v.strip_prefix('/'))
+    {
+        format!("~/{rest}")
+    } else {
+        value
+    }
+}
+
+fn workspace_path(snapshot: &StatusSnapshot) -> String {
+    let Some(cwd) = snapshot.cwd.as_deref() else {
+        return "workspace".into();
+    };
+    let Some(root) = snapshot.project_root.as_deref() else {
+        return compact_path(cwd);
+    };
+    if cwd == root {
+        return compact_path(root);
+    }
+    if let Some(relative) = cwd
+        .strip_prefix(root)
+        .and_then(|value| value.strip_prefix('/'))
+    {
+        return format!("{} › {}", compact_path(root), sanitize_dynamic(relative));
+    }
+    compact_path(cwd)
+}
+
+fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
+    let percent = snapshot.context_percent.or_else(|| {
+        let used = snapshot.context_used?;
+        let window = snapshot.context_window?.max(1);
+        Some(((used.saturating_mul(100) / window).min(100)) as u8)
+    })?;
+    let mut text = context_bar(percent);
+    if let (Some(used), Some(window)) = (snapshot.context_used, snapshot.context_window) {
+        text.push_str(&format!(
+            " {}/{}",
+            compact_number(used),
+            compact_number(window)
+        ));
+    }
+    Some(text)
+}
+
+fn token_text(snapshot: &StatusSnapshot) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(value) = snapshot.input_tokens {
+        parts.push(format!("in {}", compact_number(value)));
+    }
+    if let Some(value) = snapshot.cached_input_tokens.filter(|value| *value > 0) {
+        parts.push(format!("cache {}", compact_number(value)));
+    }
+    if let Some(value) = snapshot.output_tokens {
+        parts.push(format!("out {}", compact_number(value)));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn rate_limits_text(snapshot: &StatusSnapshot) -> Option<String> {
+    let mut windows = snapshot.rate_limits.clone();
+    windows.sort_by_key(|window| window.window_minutes.unwrap_or(u64::MAX));
+    let mut parts = windows
+        .iter()
+        .take(2)
+        .map(|window| {
+            let label = match window.window_minutes {
+                Some(minutes) if minutes <= 360 => "5h".to_owned(),
+                Some(minutes) if minutes >= 7 * 24 * 60 => "weekly".to_owned(),
+                Some(minutes) => format!("{}h", minutes.div_ceil(60)),
+                None => "limit".to_owned(),
+            };
+            let left = 100_u8.saturating_sub(window.used_percent);
+            let reset = window
+                .resets_at
+                .and_then(reset_in)
+                .map(|value| format!(" ↻{value}"));
+            format!("{label} {left}% left{}", reset.unwrap_or_default())
+        })
+        .collect::<Vec<_>>();
+    if let Some(credits) = snapshot.reset_credits.filter(|value| *value > 0) {
+        parts.push(format!("reset ×{credits}"));
+    }
+    (!parts.is_empty()).then(|| parts.join(" · "))
+}
+
+fn reset_in(timestamp: u64) -> Option<String> {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
+    let seconds = timestamp.saturating_sub(now);
+    if seconds >= 86_400 {
+        Some(format!(
+            "{}d{}h",
+            seconds / 86_400,
+            seconds % 86_400 / 3_600
+        ))
+    } else if seconds >= 3_600 {
+        Some(format!("{}h{}m", seconds / 3_600, seconds % 3_600 / 60))
+    } else {
+        Some(format!("{}m", seconds.div_ceil(60)))
+    }
+}
+
+fn compact_number(value: u64) -> String {
+    if value >= 1_000_000 {
+        format!("{:.1}m", value as f64 / 1_000_000.0)
+    } else if value >= 1_000 {
+        format!("{:.1}k", value as f64 / 1_000.0)
+    } else {
+        value.to_string()
     }
 }
 
@@ -390,6 +514,8 @@ fn segment_priority(segment: Segment) -> u8 {
     match segment {
         Segment::Work => 100,
         Segment::Context => 95,
+        Segment::RateLimits => 94,
+        Segment::Tokens => 72,
         Segment::Model => 90,
         Segment::Git => 85,
         Segment::Worktree => 82,
@@ -447,20 +573,21 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
     }
     if matches!(theme, Theme::Minimal) {
         return match segment {
-            Segment::Work | Segment::Context | Segment::Model => "\x1b[1m",
+            Segment::Work | Segment::Context | Segment::RateLimits | Segment::Model => "\x1b[1m",
             _ => "\x1b[2m",
         };
     }
     if matches!(theme, Theme::Inherit) {
         return match segment {
             Segment::App => "\x1b[1;32m",
-            Segment::Model | Segment::Agents | Segment::Tools => "\x1b[36m",
+            Segment::Model | Segment::Agents | Segment::Tools | Segment::Tokens => "\x1b[36m",
             Segment::Work => "\x1b[1;33m",
             Segment::Context => match snapshot.context_percent.unwrap_or(0) {
                 80..=u8::MAX => "\x1b[1;31m",
                 60..=79 => "\x1b[1;33m",
                 _ => "\x1b[32m",
             },
+            Segment::RateLimits => "\x1b[1;33m",
             Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => "\x1b[35m",
             Segment::Safety => "\x1b[31m",
             Segment::Elapsed | Segment::Cwd | Segment::Status => "\x1b[2m",
@@ -475,7 +602,7 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
                 "\x1b[1m\x1b[38;2;17;128;82m"
             }
         }
-        Segment::Model | Segment::Agents | Segment::Tools => {
+        Segment::Model | Segment::Agents | Segment::Tools | Segment::Tokens => {
             if dark {
                 "\x1b[38;2;139;233;253m"
             } else {
@@ -495,6 +622,13 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
             _ if dark => "\x1b[38;2;110;231;168m",
             _ => "\x1b[38;2;17;128;82m",
         },
+        Segment::RateLimits => {
+            if dark {
+                "\x1b[1m\x1b[38;2;243;201;105m"
+            } else {
+                "\x1b[1m\x1b[38;2;154;103;0m"
+            }
+        }
         Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => {
             if dark {
                 "\x1b[38;2;196;167;231m"

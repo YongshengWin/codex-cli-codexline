@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 pub struct Config {
     pub version: u16,
     pub launch: LaunchConfig,
+    pub sources: SourcesConfig,
     pub display: DisplayConfig,
 }
 
@@ -20,8 +21,22 @@ impl Default for Config {
         Self {
             version: 1,
             launch: LaunchConfig::default(),
+            sources: SourcesConfig::default(),
             display: DisplayConfig::default(),
         }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SourcesConfig {
+    /// Starts a separate read-only official app-server process for account capacity data.
+    pub app_server: bool,
+}
+
+impl Default for SourcesConfig {
+    fn default() -> Self {
+        Self { app_server: true }
     }
 }
 
@@ -81,6 +96,8 @@ impl Default for DisplayConfig {
                 Segment::Model,
                 Segment::Work,
                 Segment::Context,
+                Segment::Tokens,
+                Segment::RateLimits,
                 Segment::Git,
                 Segment::Worktree,
                 Segment::Tools,
@@ -104,6 +121,8 @@ pub enum Segment {
     Model,
     Work,
     Context,
+    Tokens,
+    RateLimits,
     Git,
     Worktree,
     Tools,

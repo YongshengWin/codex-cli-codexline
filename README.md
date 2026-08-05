@@ -163,18 +163,35 @@ glyphs = "unicode"
 refresh_hz = 8
 rows = 3
 segments = [
-  "app", "model", "work", "context", "git", "worktree", "tools", "agents",
+  "app", "model", "work", "context", "tokens", "rate-limits",
+  "git", "worktree", "tools", "agents",
   "plan", "compactions", "safety", "elapsed", "cwd", "status"
 ]
 separator = " │ "
 ```
 
-Available segments are `app`, `model`, `work`, `context`, `git`, `worktree`,
+Available segments are `app`, `model`, `work`, `context`, `tokens`,
+`rate-limits`, `git`, `worktree`,
 `tools`, `agents`, `plan`, `compactions`, `safety`, `elapsed`, `cwd`, and
 `status`. Remove a name to hide it or reorder the array to move it. `inherit`
 never paints a background and maps semantic colors through the terminal palette;
 the fixed `codex-dark` and `codex-light` themes remain optional. `preview` uses
 clearly labelled simulated state to demonstrate the responsive layout.
+
+`rate-limits` is populated through a separate, read-only official Codex
+app-server process. It shows the available 5-hour/weekly windows, remaining
+percentage, reset countdown, and reset credits. Disable that process without
+affecting Codex or Hooks:
+
+```toml
+[sources]
+app_server = false
+```
+
+`context` and `tokens` consume `thread/tokenUsage/updated` when Codexline owns
+an app-server-backed thread. They deliberately stay hidden in a plain Hook-only
+TUI session because Hooks do not expose token usage and Codexline does not read
+private transcripts or scrape the terminal.
 
 With the optional local `codexline-events` plugin trusted, the HUD receives
 tool, subagent, plan, approval, and compaction events from official Codex Hooks.

@@ -15,6 +15,10 @@ pub fn local_snapshot(codex_args: &[String]) -> StatusSnapshot {
         model,
         reasoning,
         work: Some("ready".into()),
+        cwd: std::env::current_dir()
+            .ok()
+            .map(|path| path.to_string_lossy().into_owned()),
+        project_root: git.project_root,
         git_branch: git.branch,
         git_dirty: git.dirty,
         git_staged: git.staged,
@@ -99,6 +103,7 @@ struct LocalGit {
     behind: Option<u16>,
     worktree: Option<String>,
     linked_worktree: Option<bool>,
+    project_root: Option<String>,
 }
 
 fn git_status() -> LocalGit {
@@ -150,7 +155,7 @@ fn git_status() -> LocalGit {
         ),
         _ => None,
     };
-    let worktree = root.and_then(|path| {
+    let worktree = root.as_ref().and_then(|path| {
         path.file_name()
             .map(|name| name.to_string_lossy().into_owned())
     });
@@ -163,6 +168,7 @@ fn git_status() -> LocalGit {
         behind,
         worktree,
         linked_worktree,
+        project_root: root.map(|path| path.to_string_lossy().into_owned()),
     }
 }
 

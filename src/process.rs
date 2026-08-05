@@ -11,6 +11,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
+use crate::app_server::AppServerSource;
 use crate::config::DisplayConfig;
 use crate::events::EventServer;
 use crate::render::{StatusRenderer, TerminalGuard};
@@ -45,6 +46,7 @@ pub struct LaunchRequest {
     pub bypass: Option<BypassReason>,
     pub display: DisplayConfig,
     pub snapshot: StatusSnapshot,
+    pub app_server: bool,
 }
 
 pub fn bypass_reason(explicit: bool) -> Option<BypassReason> {
@@ -82,6 +84,7 @@ pub fn launch(request: LaunchRequest) -> Result<i32> {
         &request.args,
         &request.display,
         request.snapshot,
+        request.app_server,
     ) {
         PtyOutcome::Complete(code) => Ok(code),
         PtyOutcome::Unavailable(error) => {
@@ -120,8 +123,9 @@ fn launch_pty(
     args: &[String],
     display: &DisplayConfig,
     snapshot: StatusSnapshot,
+    app_server: bool,
 ) -> PtyOutcome {
-    match prepare_pty(executable, args, display, snapshot) {
+    match prepare_pty(executable, args, display, snapshot, app_server) {
         Ok(code) => PtyOutcome::Complete(code),
         Err((false, error)) => PtyOutcome::Unavailable(error),
         Err((true, error)) => PtyOutcome::StartedFailure(error),
@@ -133,6 +137,7 @@ fn prepare_pty(
     args: &[String],
     display: &DisplayConfig,
     snapshot: StatusSnapshot,
+    app_server: bool,
 ) -> std::result::Result<i32, (bool, anyhow::Error)> {
     let before = |error| (false, error);
     let after = |error| (true, error);
@@ -173,6 +178,12 @@ fn prepare_pty(
         .with_context(|| format!("failed to start {}", executable.display()))
         .map_err(before)?;
     drop(pair.slave);
+
+    // This optional read-only source never sits on the PTY relay path. Failure is silent and
+    // leaves Hooks/local probes fully functional.
+    let _app_server = app_server
+        .then(|| AppServerSource::start(executable, Arc::clone(&snapshot)).ok())
+        .flatten();
 
     let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(after)?));
     let input_writer = Arc::clone(&writer);

@@ -86,6 +86,7 @@ fn run_codex(mut args: Vec<String>) -> Result<i32> {
         bypass,
         display: config.display,
         snapshot,
+        app_server: config.sources.app_server,
     };
     process::launch(request)
 }
@@ -296,6 +297,8 @@ fn full_segments() -> Vec<Segment> {
         Segment::Model,
         Segment::Work,
         Segment::Context,
+        Segment::Tokens,
+        Segment::RateLimits,
         Segment::Git,
         Segment::Worktree,
         Segment::Tools,
@@ -344,7 +347,7 @@ fn print_module_choices(selected: &[Segment]) {
     }
 }
 
-fn module_choices() -> [(u8, Segment, &'static str); 14] {
+fn module_choices() -> [(u8, Segment, &'static str); 16] {
     [
         (1, Segment::App, "App       Codex identity"),
         (2, Segment::Model, "Model     Model and reasoning"),
@@ -372,6 +375,16 @@ fn module_choices() -> [(u8, Segment, &'static str); 14] {
         (12, Segment::Elapsed, "Elapsed   Session timer"),
         (13, Segment::Cwd, "Directory Current workspace"),
         (14, Segment::Status, "Status    Live data source health"),
+        (
+            15,
+            Segment::Tokens,
+            "Tokens    Input, cached, and output tokens",
+        ),
+        (
+            16,
+            Segment::RateLimits,
+            "Limits    5h/weekly quota and reset",
+        ),
     ]
 }
 

@@ -249,6 +249,10 @@ Real terminal: 120 × 40
 
 Codex output is forwarded as bytes. The relay does not wait for Git, JSON,
 configuration, or rendering work.
+For companion-managed interactive sessions, Codexline adds a process-local
+`tui.status_line=[]` override so the native footer does not compete with the HUD.
+An explicit user `-c tui.status_line=...` argument still wins, and bypassed or
+non-interactive sessions remain untouched.
 
 When shim mode is enabled, process resolution is:
 

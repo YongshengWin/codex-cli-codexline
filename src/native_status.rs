@@ -75,6 +75,17 @@ pub fn detect(codex_args: &[String]) -> Detection {
     Detection::new(NativeStatusState::Enabled, "Codex built-in default")
 }
 
+/// Disables the native footer for one companion-managed child process. An
+/// explicit user override wins, so advanced users can intentionally keep it.
+pub fn disable_for_companion(codex_args: &mut Vec<String>) -> bool {
+    if command_line_override(codex_args).is_some() {
+        return false;
+    }
+    codex_args.push("-c".into());
+    codex_args.push("tui.status_line=[]".into());
+    true
+}
+
 fn configured(enabled: bool, source: &'static str) -> Detection {
     Detection::new(
         if enabled {
@@ -183,8 +194,8 @@ fn status_value(value: &toml::Value) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::{
-        NativeStatusState, command_line_override, project_config_mentions_status_line_from,
-        read_setting,
+        NativeStatusState, command_line_override, disable_for_companion,
+        project_config_mentions_status_line_from, read_setting,
     };
     use std::fs;
     use tempfile::tempdir;
@@ -201,6 +212,17 @@ mod tests {
         let args = vec!["--config=tui.status_line=[\"model\"]".into()];
         let result = command_line_override(&args).unwrap();
         assert_eq!(result.state, NativeStatusState::Enabled);
+    }
+
+    #[test]
+    fn companion_disables_native_footer_without_overriding_user_intent() {
+        let mut args = vec!["--model".into(), "gpt-test".into()];
+        assert!(disable_for_companion(&mut args));
+        assert_eq!(args[args.len() - 2..], ["-c", "tui.status_line=[]"]);
+
+        let mut explicit = vec!["-c".into(), "tui.status_line=[\"model\"]".into()];
+        assert!(!disable_for_companion(&mut explicit));
+        assert_eq!(explicit.len(), 2);
     }
 
     #[test]

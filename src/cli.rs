@@ -69,12 +69,17 @@ fn run_codex(mut args: Vec<String>) -> Result<i32> {
             Config::default()
         }
     };
+    let bypass = process::bypass_reason(explicit_bypass);
+    let is_exec = args.first().is_some_and(|arg| arg == "exec");
+    if bypass.is_none() && !is_exec {
+        native_status::disable_for_companion(&mut args);
+    }
     let executable = process::discover_codex()?;
     let snapshot = sources::local_snapshot(&args);
     let request = LaunchRequest {
         executable,
         args,
-        bypass: process::bypass_reason(explicit_bypass),
+        bypass,
         display: config.display,
         snapshot,
     };

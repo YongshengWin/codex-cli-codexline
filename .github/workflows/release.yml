@@ -16,7 +16,7 @@ jobs:
     name: Validate release metadata
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Match tag to Cargo package version
         if: github.ref_type == 'tag'
         shell: bash
@@ -48,7 +48,7 @@ jobs:
             archive: zip
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}

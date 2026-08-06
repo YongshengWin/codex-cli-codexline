@@ -858,10 +858,11 @@ fn theme_index(theme: Theme) -> usize {
         Theme::Nord => 5,
         Theme::Gruvbox => 6,
         Theme::RosePine => 7,
-        Theme::CodexDark => 8,
-        Theme::CodexLight => 9,
-        Theme::Minimal => 10,
-        Theme::Mono => 11,
+        Theme::PastelSyntax => 8,
+        Theme::CodexDark => 9,
+        Theme::CodexLight => 10,
+        Theme::Minimal => 11,
+        Theme::Mono => 12,
     }
 }
 
@@ -878,6 +879,10 @@ fn theme_choices() -> &'static [(Theme, &'static str)] {
         (Theme::Nord, "Theme · Nord · transparent"),
         (Theme::Gruvbox, "Theme · Gruvbox · transparent"),
         (Theme::RosePine, "Theme · Rosé Pine · transparent"),
+        (
+            Theme::PastelSyntax,
+            "Theme · Pastel Syntax · pink context · transparent",
+        ),
         (Theme::CodexDark, "Theme · Codex Dark · fixed background"),
         (Theme::CodexLight, "Theme · Codex Light · fixed background"),
         (Theme::Minimal, "Theme · Minimal"),

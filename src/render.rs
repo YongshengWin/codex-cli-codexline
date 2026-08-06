@@ -868,10 +868,9 @@ fn git_text(branch: &str, snapshot: &StatusSnapshot) -> String {
 
 fn context_bar(percent: u8) -> String {
     let percent = percent.min(100);
-    let free = 100_u8.saturating_sub(percent);
-    let filled = usize::from((free.saturating_add(10) / 20).min(5));
+    let filled = usize::from((percent.saturating_add(10) / 20).min(5));
     format!(
-        "CTX {}{} {free}%",
+        "CTX {}{} {percent}% used",
         "█".repeat(filled),
         "░".repeat(5 - filled)
     )
@@ -944,7 +943,8 @@ fn theme_base(theme: Theme) -> &'static str {
         | Theme::Dracula
         | Theme::Nord
         | Theme::Gruvbox
-        | Theme::RosePine => "\x1b[0m",
+        | Theme::RosePine
+        | Theme::PastelSyntax => "\x1b[0m",
         Theme::CodexDark => "\x1b[0m\x1b[48;2;17;20;22m\x1b[38;2;214;222;217m",
         Theme::CodexLight => "\x1b[0m\x1b[48;2;238;242;239m\x1b[38;2;35;42;38m",
         Theme::Minimal | Theme::Mono => "\x1b[0m",
@@ -958,6 +958,7 @@ fn theme_separator(theme: Theme) -> &'static str {
     match theme {
         Theme::Inherit => "\x1b[2m",
         Theme::Ox96f => "\x1b[38;2;84;84;82m",
+        Theme::PastelSyntax => "\x1b[38;2;112;190;181m",
         Theme::CodexDark => "\x1b[38;2;74;85;79m",
         Theme::CodexLight => "\x1b[38;2;153;164;157m",
         Theme::Minimal => "\x1b[2m",
@@ -1200,6 +1201,44 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
             | Segment::AppServerHealth => "\x1b[38;2;157;234;246m",
         };
     }
+    if matches!(theme, Theme::PastelSyntax) {
+        return match segment {
+            Segment::App => "\x1b[1m\x1b[38;2;238;238;242m",
+            Segment::Model
+            | Segment::Reasoning
+            | Segment::Agents
+            | Segment::AgentCount
+            | Segment::Tools
+            | Segment::Tokens
+            | Segment::InputTokens
+            | Segment::CachedTokens
+            | Segment::OutputTokens => "\x1b[38;2;126;162;224m",
+            Segment::Work => "\x1b[1m\x1b[38;2;225;145;170m",
+            Segment::Context | Segment::ContextRemaining | Segment::ContextUsed => {
+                "\x1b[1m\x1b[38;2;225;145;170m"
+            }
+            Segment::RateLimits
+            | Segment::FiveHourLimit
+            | Segment::WeeklyLimit
+            | Segment::ResetCredits => "\x1b[38;2;191;190;218m",
+            Segment::Git
+            | Segment::GitDirty
+            | Segment::GitStaged
+            | Segment::GitModified
+            | Segment::GitSync
+            | Segment::Worktree
+            | Segment::ProjectRoot
+            | Segment::Plan
+            | Segment::Compactions => "\x1b[38;2;151;201;144m",
+            Segment::Safety => "\x1b[38;2;225;145;170m",
+            Segment::Status | Segment::HooksHealth | Segment::AppServerHealth => {
+                "\x1b[38;2;112;190;181m"
+            }
+            Segment::Elapsed | Segment::Cwd | Segment::ContextWindow | Segment::SessionId => {
+                "\x1b[38;2;174;176;202m"
+            }
+        };
+    }
     if let Some(palette) = color_palette(theme) {
         return palette_segment(palette, segment, snapshot);
     }
@@ -1324,6 +1363,25 @@ mod tests {
     }
 
     #[test]
+    fn context_summary_always_labels_used_capacity() {
+        let display = DisplayConfig {
+            rows: 1,
+            segments: vec![Segment::Context],
+            ..DisplayConfig::default()
+        };
+        let mut snapshot = StatusSnapshot {
+            context_percent: Some(0),
+            ..StatusSnapshot::default()
+        };
+        let fresh = status_layouts(80, &display, &snapshot, 8);
+        assert_eq!(fresh[0][0].1, "CTX ░░░░░ 0% used");
+
+        snapshot.context_percent = Some(75);
+        let used = status_layouts(80, &display, &snapshot, 8);
+        assert_eq!(used[0][0].1, "CTX ████░ 75% used");
+    }
+
+    #[test]
     fn granular_segments_render_real_snapshot_values() {
         let display = DisplayConfig {
             rows: 3,
@@ -1406,6 +1464,7 @@ mod tests {
             (Theme::Nord, "\x1b[38;2;136;192;208m"),
             (Theme::Gruvbox, "\x1b[38;2;142;192;124m"),
             (Theme::RosePine, "\x1b[38;2;235;188;186m"),
+            (Theme::PastelSyntax, "\x1b[1m\x1b[38;2;225;145;170m"),
         ] {
             let preview = preview_ansi(
                 100,

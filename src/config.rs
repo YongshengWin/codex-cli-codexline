@@ -171,6 +171,7 @@ pub enum Theme {
     Nord,
     Gruvbox,
     RosePine,
+    PastelSyntax,
     CodexDark,
     CodexLight,
     Minimal,

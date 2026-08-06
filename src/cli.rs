@@ -237,6 +237,7 @@ fn configure_linear() -> Result<i32> {
     println!(" 10  Nord (transparent)");
     println!(" 11  Gruvbox (transparent)");
     println!(" 12  Rosé Pine (transparent)");
+    println!(" 13  Pastel Syntax (pink context, transparent)");
     let theme_default = theme_number(config.display.theme);
     let theme = prompt(&format!("Theme [{theme_default}]: "))?;
     config.display.theme = match if theme.is_empty() {
@@ -256,7 +257,8 @@ fn configure_linear() -> Result<i32> {
         "10" => Theme::Nord,
         "11" => Theme::Gruvbox,
         "12" => Theme::RosePine,
-        _ => anyhow::bail!("expected a theme from 1 to 12; no changes were saved"),
+        "13" => Theme::PastelSyntax,
+        _ => anyhow::bail!("expected a theme from 1 to 13; no changes were saved"),
     };
     let glyph_default = match config.display.glyphs {
         Glyphs::Unicode => "1",
@@ -573,6 +575,7 @@ fn theme_number(theme: Theme) -> &'static str {
         Theme::Nord => "10",
         Theme::Gruvbox => "11",
         Theme::RosePine => "12",
+        Theme::PastelSyntax => "13",
     }
 }
 

@@ -27,6 +27,12 @@ codexline
 完整首次流程就是：**安装 → 配置 → 检查 → 启动**。Codexline 会安装为独立的
 `codexline` 命令，绝不会覆盖官方 `codex`。
 
+已经安装时，使用下面的命令更新到最新提交：
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+```
+
 | 命令 | 功能 |
 | --- | --- |
 | `codexline` | 启动带 HUD 的交互式 Codex |
@@ -54,7 +60,7 @@ codexline
 | 分类 | 可展示信息 |
 | --- | --- |
 | 会话 | 模型、推理等级、运行状态、当前工具、耗时 |
-| 用量 | 上下文压力、输入/缓存/输出 Token、5 小时与周额度、重置时间 |
+| 用量 | 已使用上下文、输入/缓存/输出 Token、5 小时与周额度、重置时间 |
 | 工作区 | 目录、项目根目录、Git 分支、脏/暂存/修改数量、ahead/behind、worktree |
 | 活动 | 最近工具、计划进度、压缩次数、活动/总子代理数量 |
 | 运行环境 | 沙箱、审批模式、权限和数据源健康状态 |
@@ -65,7 +71,7 @@ Codex 暴露子代理活动时，Agent Inspector 会在主 HUD 下展开。按 `
 
 其他关键能力：
 
-- 12 套内置主题、透明配色、Unicode 与 ASCII 模式
+- 13 套内置主题、透明配色、Unicode 与 ASCII 模式
 - 根据终端宽度自动截断的一至三行布局
 - 检测原生 Codex footer，并仅在伴生会话内关闭它
 - 管道、CI、`TERM=dumb`、极小终端和显式旁路自动降级
@@ -92,7 +98,8 @@ codexline config
 | `Esc` | 不保存并退出 |
 
 主题包括 Inherit Terminal、0x96f Neon、Tokyo Night、Catppuccin Mocha、
-Dracula、Nord、Gruvbox、Rosé Pine、Codex Dark、Codex Light、Minimal 和 Mono。
+Dracula、Nord、Gruvbox、Rosé Pine、Pastel Syntax、Codex Dark、Codex Light、
+Minimal 和 Mono。Pastel Syntax 使用图示的柔和语法色，并以粉色显示上下文进度。
 透明主题会保留终端原有背景。
 
 需要逐行交互的无障碍兼容模式时：

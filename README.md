@@ -29,6 +29,12 @@ That is the complete first-run flow: **install → configure → verify → star
 Codexline installs as a separate `codexline` command and never overwrites the
 official `codex` executable.
 
+Already installed? Update to the latest commit with:
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+```
+
 | Command | What it does |
 | --- | --- |
 | `codexline` | Start interactive Codex with the HUD |
@@ -58,7 +64,7 @@ data.
 | Area | Available information |
 | --- | --- |
 | Session | Model, reasoning effort, run state, current tool, elapsed time |
-| Usage | Context pressure, input/cache/output tokens, 5-hour and weekly limits, reset time |
+| Usage | Context used, input/cache/output tokens, 5-hour and weekly limits, reset time |
 | Workspace | Directory, project root, Git branch, dirty/staged/modified counts, ahead/behind, worktree |
 | Activity | Recent tools, plan progress, compactions, active/total agents |
 | Runtime | Sandbox, approval mode, permissions, data-source health |
@@ -70,7 +76,7 @@ rendered as misleading zeroes.
 
 Other design choices:
 
-- 12 built-in themes, transparent palettes, Unicode and ASCII modes
+- 13 built-in themes, transparent palettes, Unicode and ASCII modes
 - Responsive one-to-three-row layouts with width-aware truncation
 - Native Codex footer detection and companion-scoped suppression
 - Direct fallback for pipes, CI, `TERM=dumb`, tiny terminals and explicit bypass
@@ -98,8 +104,10 @@ at the bottom.
 | `Esc` | Exit without saving |
 
 Themes include Inherit Terminal, 0x96f Neon, Tokyo Night, Catppuccin Mocha,
-Dracula, Nord, Gruvbox, Rosé Pine, Codex Dark, Codex Light, Minimal and Mono.
-Transparent themes preserve the terminal's original background.
+Dracula, Nord, Gruvbox, Rosé Pine, Pastel Syntax, Codex Dark, Codex Light,
+Minimal and Mono. Pastel Syntax uses the requested soft syntax palette with a
+pink context progress indicator. Transparent themes preserve the terminal's
+original background.
 
 For a line-by-line accessible fallback:
 

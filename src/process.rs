@@ -144,23 +144,6 @@ impl SynchronizedOutput {
     }
 }
 
-#[cfg(unix)]
-fn signal_idle_interrupt(process_id: Option<u32>, idle: bool) {
-    if !idle {
-        return;
-    }
-    let Some(process_id) = process_id.and_then(|id| i32::try_from(id).ok()) else {
-        return;
-    };
-    // SAFETY: `process_id` came from the just-spawned child and SIGINT has no pointer arguments.
-    unsafe {
-        libc::kill(process_id, libc::SIGINT);
-    }
-}
-
-#[cfg(not(unix))]
-fn signal_idle_interrupt(_process_id: Option<u32>, _idle: bool) {}
-
 fn launch_direct(executable: &Path, args: &[String], _reason: Option<BypassReason>) -> Result<i32> {
     #[cfg(unix)]
     {
@@ -270,7 +253,6 @@ fn prepare_pty(
     let input_writer = Arc::clone(&writer);
     let interrupted = Arc::new(AtomicBool::new(false));
     let input_interrupted = Arc::clone(&interrupted);
-    let child_process_id = child.process_id();
     // Detached deliberately: a blocking terminal read cannot be cancelled portably. The
     // operating system tears it down when the short-lived wrapper process exits.
     thread::spawn(move || {
@@ -285,9 +267,6 @@ fn prepare_pty(
                 .read()
                 .map_or(0, |snapshot| snapshot.agents.len());
             let ctrl_c = buffer[..count].contains(&0x03);
-            let idle = input_snapshot
-                .read()
-                .is_ok_and(|snapshot| matches!(snapshot.work.as_deref(), None | Some("ready")));
             let handled = !ctrl_c
                 && agent_panel.lock().map_or(true, |mut panel| {
                     panel.handle_input(&buffer[..count], agent_count)
@@ -298,7 +277,6 @@ fn prepare_pty(
             if ctrl_c {
                 // Stop competing with Codex's graceful shutdown frame immediately.
                 input_interrupted.store(true, Ordering::Release);
-                signal_idle_interrupt(child_process_id, idle);
             }
             let Ok(mut writer) = input_writer.lock() else {
                 break;

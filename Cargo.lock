@@ -145,7 +145,6 @@ dependencies = [
  "clap",
  "crossterm",
  "directories",
- "libc",
  "portable-pty",
  "serde",
  "serde_json",

@@ -27,11 +27,17 @@ codexline
 完整首次流程就是：**安装 → 配置 → 检查 → 启动**。Codexline 会安装为独立的
 `codexline` 命令，绝不会覆盖官方 `codex`。
 
-已经安装时，使用下面的命令更新到最新提交：
+### 更新已有安装
+
+重新安装 `main` 上的最新提交：
 
 ```bash
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+codexline doctor
 ```
+
+更新不会覆盖已有配置。Pastel Syntax 是新配置的默认主题；已有安装更新后，请运行
+`codexline config`，进入 **Appearance**，选择 **Pastel Syntax**，再按 `Enter` 保存。
 
 | 命令 | 功能 |
 | --- | --- |
@@ -99,8 +105,8 @@ codexline config
 
 主题包括 Inherit Terminal、0x96f Neon、Tokyo Night、Catppuccin Mocha、
 Dracula、Nord、Gruvbox、Rosé Pine、Pastel Syntax、Codex Dark、Codex Light、
-Minimal 和 Mono。Pastel Syntax 使用图示的柔和语法色，并以粉色显示上下文进度。
-透明主题会保留终端原有背景。
+Minimal 和 Mono。**Pastel Syntax 是默认主题**，使用图示的柔和语法色，并以粉色
+显示上下文进度。透明主题会保留终端原有背景。
 
 需要逐行交互的无障碍兼容模式时：
 

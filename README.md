@@ -29,11 +29,19 @@ That is the complete first-run flow: **install → configure → verify → star
 Codexline installs as a separate `codexline` command and never overwrites the
 official `codex` executable.
 
-Already installed? Update to the latest commit with:
+### Updating an existing installation
+
+Reinstall the newest commit from `main`:
 
 ```bash
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+codexline doctor
 ```
+
+Your configuration is preserved during updates. Pastel Syntax is the default
+for new configurations; to apply it to an existing installation, run
+`codexline config`, open **Appearance**, select **Pastel Syntax**, and press
+`Enter` to save.
 
 | Command | What it does |
 | --- | --- |
@@ -105,9 +113,9 @@ at the bottom.
 
 Themes include Inherit Terminal, 0x96f Neon, Tokyo Night, Catppuccin Mocha,
 Dracula, Nord, Gruvbox, Rosé Pine, Pastel Syntax, Codex Dark, Codex Light,
-Minimal and Mono. Pastel Syntax uses the requested soft syntax palette with a
-pink context progress indicator. Transparent themes preserve the terminal's
-original background.
+Minimal and Mono. **Pastel Syntax is the default**: it uses the requested soft
+syntax palette with a pink context progress indicator. Transparent themes
+preserve the terminal's original background.
 
 For a line-by-line accessible fallback:
 

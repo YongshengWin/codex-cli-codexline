@@ -92,7 +92,7 @@ pub struct DisplayConfig {
 impl Default for DisplayConfig {
     fn default() -> Self {
         Self {
-            theme: Theme::Inherit,
+            theme: Theme::PastelSyntax,
             glyphs: Glyphs::Unicode,
             refresh_hz: 8,
             rows: 3,
@@ -321,6 +321,7 @@ mod tests {
     fn defaults_are_valid_and_keep_codex() {
         let config = Config::default();
         assert_eq!(config.launch.mode, LaunchMode::Shim);
+        assert!(matches!(config.display.theme, super::Theme::PastelSyntax));
         assert!(config.sources.app_server);
         assert!(!config.sources.remote_proxy);
         config.validate().unwrap();

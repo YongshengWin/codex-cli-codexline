@@ -661,6 +661,19 @@ fn validate_candidate(candidate: PathBuf, current: Option<&Path>) -> Result<Path
             "candidate is not executable"
         );
     }
+    #[cfg(windows)]
+    {
+        let extension = canonical
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        anyhow::ensure!(
+            ["exe", "cmd", "bat"]
+                .iter()
+                .any(|allowed| extension.eq_ignore_ascii_case(allowed)),
+            "candidate is not a Windows executable"
+        );
+    }
     Ok(canonical)
 }
 

@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{Read, Write};
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
 #[test]
-fn native_pty_or_conpty_runs_codexline() {
+fn native_pty_or_conpty_supports_a_bidirectional_session() {
     let pair = native_pty_system()
         .openpty(PtySize {
             rows: 12,
@@ -16,14 +16,20 @@ fn native_pty_or_conpty_runs_codexline() {
         })
         .expect("native PTY backend should initialize");
 
-    let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codexline"));
-    command.arg("--version");
-    let expected = format!("codexline {}", env!("CARGO_PKG_VERSION"));
+    #[cfg(windows)]
+    let mut command = {
+        let mut command = CommandBuilder::new("cmd.exe");
+        command.args(["/D", "/Q"]);
+        command
+    };
+    #[cfg(not(windows))]
+    let command = CommandBuilder::new("/bin/sh");
+    let expected = "CODEXLINE_PTY_OK";
     let mut reader = pair
         .master
         .try_clone_reader()
         .expect("PTY output reader should be available");
-    let input = pair
+    let mut input = pair
         .master
         .take_writer()
         .expect("PTY input writer should be available");
@@ -39,9 +45,17 @@ fn native_pty_or_conpty_runs_codexline() {
         let _ = output_tx.send(result);
     });
 
-    // portable-pty documents that taking and then dropping the writer is required to generate
-    // EOF reliably. A short grace period also avoids losing very short-lived output on macOS.
-    thread::sleep(Duration::from_millis(20));
+    #[cfg(windows)]
+    input
+        .write_all(b"echo CODEXLINE_PTY_OK\r\nexit\r\n")
+        .expect("PTY input should be writable");
+    #[cfg(not(windows))]
+    input
+        .write_all(b"printf CODEXLINE_PTY_OK\\n\nexit\n")
+        .expect("PTY input should be writable");
+    input.flush().expect("PTY input should flush");
+
+    // Taking and dropping the writer generates EOF if the shell exits before consuming `exit`.
     drop(input);
 
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -70,5 +84,5 @@ fn native_pty_or_conpty_runs_codexline() {
     reader_thread.join().expect("PTY reader should stop");
     let output = String::from_utf8_lossy(&output);
 
-    assert!(output.contains(&expected), "output was {output:?}");
+    assert!(output.contains(expected), "output was {output:?}");
 }

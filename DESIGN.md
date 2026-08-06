@@ -306,8 +306,9 @@ screen、cursor visibility、全屏 reset 和 synchronized update。它不根据
 4. 保存光标，移动到真实终端最后一行，清行并输出。
 5. 恢复 SGR 和光标状态。
 
-Codex 清屏或切换 alternate screen 后立即补画。常规状态按事件驱动更新；只有
-spinner、时钟和耗时启用时才使用定时器。
+Codex 清屏或切换 alternate screen 后立即补画。若子 TUI 使用 synchronized output，
+在其帧结束后用独立的 synchronized transaction 原子恢复全部 HUD 行，不等待常规
+刷新周期。常规状态按事件驱动更新；只有 spinner、时钟和耗时启用时才使用定时器。
 
 启动时先预留行但不抢在 Codex 前绘制。renderer 忽略终端能力查询等纯 ANSI 控制流，
 在观察到首批可见 Codex 内容并安静 50 ms 后一次性揭示 HUD；仅当子进程完全没有

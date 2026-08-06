@@ -192,7 +192,9 @@ impl SynchronizedOutput {
     const BEGIN: &'static [u8] = b"\x1b[?2026h";
     const END: &'static [u8] = b"\x1b[?2026l";
 
-    fn observe(&mut self, bytes: &[u8]) {
+    /// Returns true when at least one synchronized frame ended in this byte batch.
+    fn observe(&mut self, bytes: &[u8]) -> bool {
+        let mut frame_ended = false;
         for &byte in bytes {
             self.candidate.push(byte);
             if self.candidate == Self::BEGIN {
@@ -200,6 +202,7 @@ impl SynchronizedOutput {
                 self.candidate.clear();
             } else if self.candidate == Self::END {
                 self.active = false;
+                frame_ended = true;
                 self.candidate.clear();
             } else if !Self::BEGIN.starts_with(&self.candidate)
                 && !Self::END.starts_with(&self.candidate)
@@ -214,6 +217,7 @@ impl SynchronizedOutput {
                 self.candidate.drain(..keep);
             }
         }
+        frame_ended
     }
 
     fn active(&self) -> bool {
@@ -474,9 +478,10 @@ fn prepare_pty(
     let mut interrupt_observed = None;
     let mut hud_invalidated = false;
     loop {
+        let mut synchronized_frame_ended = false;
         match output_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(Ok(bytes)) => {
-                synchronized_output.observe(&bytes);
+                synchronized_frame_ended = synchronized_output.observe(&bytes);
                 saw_visible_output |= visible_output.observe(&bytes);
                 last_child_output = std::time::Instant::now();
                 saw_any_child_output = true;
@@ -562,17 +567,33 @@ fn prepare_pty(
                 startup_started.elapsed(),
                 last_child_output.elapsed(),
             );
+        let repair_hud = hud_visible
+            && hud_invalidated
+            && (synchronized_frame_ended || last_child_output.elapsed() >= frame_interval);
         let refresh_hud = hud_visible
+            && !hud_invalidated
             && last_draw.elapsed() >= Duration::from_secs(1)
             && last_child_output.elapsed() >= frame_interval;
-        if !shutting_down && !synchronized_output.active() && (reveal_hud || refresh_hud) {
-            if hud_invalidated {
+        if !shutting_down
+            && !synchronized_output.active()
+            && (reveal_hud || repair_hud || refresh_hud)
+        {
+            let atomic_repair = hud_invalidated;
+            if atomic_repair {
+                stdout
+                    .write_all(SynchronizedOutput::BEGIN)
+                    .map_err(|error| after(error.into()))?;
                 terminal.prepare_status_draw(&mut stdout).map_err(after)?;
                 renderer.invalidate();
             }
             renderer
                 .draw(&mut stdout, last_size.0, last_size.1)
                 .map_err(after)?;
+            if atomic_repair {
+                stdout
+                    .write_all(SynchronizedOutput::END)
+                    .map_err(|error| after(error.into()))?;
+            }
             stdout.flush().map_err(|error| after(error.into()))?;
             last_draw = std::time::Instant::now();
             hud_invalidated = false;
@@ -678,13 +699,16 @@ mod tests {
     #[test]
     fn synchronized_output_observer_handles_split_boundaries() {
         let mut observer = SynchronizedOutput::default();
-        observer.observe(b"text\x1b[?20");
+        assert!(!observer.observe(b"text\x1b[?20"));
         assert!(!observer.active());
-        observer.observe(b"26hframe");
+        assert!(!observer.observe(b"26hframe"));
         assert!(observer.active());
-        observer.observe(b"more\x1b[?2026");
+        assert!(!observer.observe(b"more\x1b[?2026"));
         assert!(observer.active());
-        observer.observe(b"ltail");
+        assert!(observer.observe(b"ltail"));
+        assert!(!observer.active());
+
+        assert!(observer.observe(b"\x1b[?2026hcomplete\x1b[?2026l"));
         assert!(!observer.active());
     }
 

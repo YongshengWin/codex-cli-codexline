@@ -409,6 +409,7 @@ fn prepare_pty(
     let frame_interval = Duration::from_millis(1000 / u64::from(display.refresh_hz));
     let mut synchronized_output = SynchronizedOutput::default();
     let mut interrupt_observed = None;
+    let mut hud_invalidated = false;
     loop {
         match output_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(Ok(bytes)) => {
@@ -418,6 +419,7 @@ fn prepare_pty(
                     .write_all(&bytes)
                     .map_err(|error| after(error.into()))?;
                 stdout.flush().map_err(|error| after(error.into()))?;
+                hud_invalidated = true;
             }
             Ok(Err(error)) => {
                 return Err(after(
@@ -478,22 +480,29 @@ fn prepare_pty(
             terminal
                 .update_reserved_rows(last_size.1.saturating_sub(reserved_rows), reserved_rows)
                 .map_err(after)?;
+            renderer.invalidate();
             renderer
                 .draw(&mut stdout, last_size.0, last_size.1)
                 .map_err(after)?;
             stdout.flush().map_err(|error| after(error.into()))?;
             last_draw = std::time::Instant::now();
+            hud_invalidated = false;
         }
         if !shutting_down
             && !synchronized_output.active()
             && last_draw.elapsed() >= Duration::from_secs(1)
             && last_child_output.elapsed() >= frame_interval
         {
+            if hud_invalidated {
+                terminal.prepare_status_draw(&mut stdout).map_err(after)?;
+                renderer.invalidate();
+            }
             renderer
                 .draw(&mut stdout, last_size.0, last_size.1)
                 .map_err(after)?;
             stdout.flush().map_err(|error| after(error.into()))?;
             last_draw = std::time::Instant::now();
+            hud_invalidated = false;
         }
     }
     let status = child

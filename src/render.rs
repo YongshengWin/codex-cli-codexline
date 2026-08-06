@@ -42,6 +42,14 @@ impl TerminalGuard {
         stdout.flush()?;
         Ok(())
     }
+
+    /// Reassert the child scroll region after the child TUI has emitted a full-screen reset.
+    /// The cursor is preserved and no status cells are touched here.
+    pub fn prepare_status_draw(&self, output: &mut impl Write) -> Result<()> {
+        let child_rows = self.child_rows.get();
+        write!(output, "\x1b7\x1b[1;{child_rows}r\x1b8")?;
+        Ok(())
+    }
 }
 
 impl Drop for TerminalGuard {
@@ -131,6 +139,12 @@ impl StatusRenderer {
 
     pub fn required_rows(&self, width: u16) -> u16 {
         self.layouts(width).len().min(usize::from(u16::MAX)) as u16
+    }
+
+    /// Child full-screen redraws can erase unchanged HUD rows behind our diff cache.
+    pub fn invalidate(&mut self) {
+        self.previous_rows.clear();
+        self.previous_first_row = None;
     }
 
     fn layouts(&self, width: u16) -> Vec<Vec<(Segment, String)>> {
@@ -1000,5 +1014,23 @@ mod tests {
         let mut unchanged = Vec::new();
         renderer.draw(&mut unchanged, 100, 40).unwrap();
         assert!(unchanged.is_empty());
+    }
+
+    #[test]
+    fn invalidation_redraws_every_unchanged_hud_row() {
+        let display = DisplayConfig::default();
+        let snapshot = Arc::new(RwLock::new(StatusSnapshot::default()));
+        let mut renderer = StatusRenderer::new(display, snapshot);
+        let mut first = Vec::new();
+        renderer.draw(&mut first, 100, 40).unwrap();
+
+        renderer.invalidate();
+        let mut restored = Vec::new();
+        renderer.draw(&mut restored, 100, 40).unwrap();
+
+        let restored = String::from_utf8(restored).unwrap();
+        assert!(restored.contains("\x1b[38;1H"));
+        assert!(restored.contains("\x1b[39;1H"));
+        assert!(restored.contains("\x1b[40;1H"));
     }
 }

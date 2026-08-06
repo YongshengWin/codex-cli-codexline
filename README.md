@@ -107,6 +107,11 @@ HUD preview stays anchored at full width below them, matching the final HUD's
 available width. Set `CODEXLINE_CONFIG_LINEAR=1` for the accessible line-by-line
 fallback.
 
+The Modules section groups signals into **Core**, **Usage**, **Workspace**,
+**Activity**, and **Runtime**. `←/→` switches these compact categories,
+`↑/↓` moves through only the current category, and `Tab` returns to the main
+section navigation, so the editor never becomes one long scrolling checklist.
+
 ### 1. Guided setup
 
 First choose how Codexline should launch, then select **Full**, **Focus**, or

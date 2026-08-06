@@ -448,6 +448,10 @@ Launch <-> Preset <-> Modules <-> Appearance <-> Data <-> Review
 是起点而不是锁定模板；用户修改任何单项后，配置状态变为 Custom。窗口小于最低
 尺寸时显示 resize 提示；`CODEXLINE_CONFIG_LINEAR=1` 提供 screen reader 和兼容回退。
 
+Modules 不得把全部字段放进单一纵向长列表。它使用 Core、Usage、Workspace、Activity
+和 Runtime 五个横向分类；在 Modules 页中 `←/→` 切换分类，`↑/↓` 只遍历当前分类，
+Tab/Shift+Tab 返回主步骤导航。分类切换不得改变用户已配置的模块顺序。
+
 Launch 步骤必须让用户明确选择启动方式：
 
 1. **Keep `codex` command（推荐）**：安装用户级、可逆的 PATH shim，用户继续输入

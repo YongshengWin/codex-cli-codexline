@@ -28,6 +28,35 @@ enum Page {
     Review,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModuleCategory {
+    Core,
+    Usage,
+    Workspace,
+    Activity,
+    Runtime,
+}
+
+impl ModuleCategory {
+    const ALL: [Self; 5] = [
+        Self::Core,
+        Self::Usage,
+        Self::Workspace,
+        Self::Activity,
+        Self::Runtime,
+    ];
+
+    fn title(self) -> &'static str {
+        match self {
+            Self::Core => "Core",
+            Self::Usage => "Usage",
+            Self::Workspace => "Workspace",
+            Self::Activity => "Activity",
+            Self::Runtime => "Runtime",
+        }
+    }
+}
+
 impl Page {
     const ALL: [Self; 6] = [
         Self::Launch,
@@ -55,6 +84,7 @@ struct Editor {
     original: Config,
     config: Config,
     page: Page,
+    module_category: ModuleCategory,
     cursor: usize,
     message: String,
 }
@@ -72,6 +102,7 @@ impl Editor {
             original: config.clone(),
             config,
             page: Page::Launch,
+            module_category: ModuleCategory::Core,
             cursor: 0,
             message: "Changes are staged until you save.".into(),
         }
@@ -85,7 +116,7 @@ impl Editor {
         match self.page {
             Page::Launch => 2,
             Page::Preset => 4,
-            Page::Modules => module_choices().len(),
+            Page::Modules => module_choices(self.module_category).len(),
             Page::Appearance => 11,
             Page::Sources => 3,
             Page::Review => 2,
@@ -109,6 +140,16 @@ impl Editor {
         }
     }
 
+    fn switch_module_category(&mut self, delta: isize) {
+        let current = ModuleCategory::ALL
+            .iter()
+            .position(|category| *category == self.module_category)
+            .unwrap_or(0) as isize;
+        let last = ModuleCategory::ALL.len() as isize - 1;
+        self.module_category = ModuleCategory::ALL[(current + delta).clamp(0, last) as usize];
+        self.cursor = 0;
+    }
+
     fn move_cursor(&mut self, delta: isize) {
         let last = self.option_count().saturating_sub(1) as isize;
         self.cursor = (self.cursor as isize + delta).clamp(0, last) as usize;
@@ -125,7 +166,7 @@ impl Editor {
             }
             Page::Preset => apply_preset(&mut self.config, self.cursor),
             Page::Modules => {
-                let segment = module_choices()[self.cursor].0;
+                let segment = module_choices(self.module_category)[self.cursor].0;
                 if let Some(index) = self
                     .config
                     .display
@@ -170,6 +211,8 @@ impl Editor {
             return Ok(Outcome::Cancel);
         }
         match key.code {
+            KeyCode::Left if self.page == Page::Modules => self.switch_module_category(-1),
+            KeyCode::Right if self.page == Page::Modules => self.switch_module_category(1),
             KeyCode::Left | KeyCode::BackTab => self.switch_page(-1),
             KeyCode::Right | KeyCode::Tab => self.switch_page(1),
             KeyCode::Up | KeyCode::Char('k') => self.move_cursor(-1),
@@ -315,7 +358,11 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
     let footer_y = rows - 3;
     let preview_y = footer_y.saturating_sub(preview_lines.len() as u16);
     let divider_y = preview_y.saturating_sub(2);
-    let options_y = 6;
+    let options_y = if editor.page == Page::Modules { 8 } else { 6 };
+
+    if editor.page == Page::Modules {
+        draw_module_categories(output, editor, 2, 5)?;
+    }
 
     draw_options(
         output,
@@ -338,9 +385,39 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
         )),
         MoveTo(2, rows - 2),
         SetForegroundColor(Color::Grey),
-        Print("←→ section   ↑↓ move   Space/Enter select   S save   Esc cancel"),
+        Print(if editor.page == Page::Modules {
+            "Tab section   ←→ category   ↑↓ move   Space toggle   S save   Esc cancel"
+        } else {
+            "←→/Tab section   ↑↓ move   Space/Enter select   S save   Esc cancel"
+        }),
         ResetColor
     )?;
+    Ok(())
+}
+
+fn draw_module_categories(output: &mut impl Write, editor: &Editor, x: u16, y: u16) -> Result<()> {
+    let mut category_x = x;
+    for category in ModuleCategory::ALL {
+        let active = category == editor.module_category;
+        queue!(
+            output,
+            MoveTo(category_x, y),
+            SetForegroundColor(if active { Color::Cyan } else { Color::DarkGrey }),
+            SetAttribute(if active {
+                Attribute::Bold
+            } else {
+                Attribute::Reset
+            }),
+            Print(format!(
+                "{} {} ",
+                if active { "◆" } else { "·" },
+                category.title()
+            )),
+            SetAttribute(Attribute::Reset),
+            ResetColor
+        )?;
+        category_x += category.title().len() as u16 + 4;
+    }
     Ok(())
 }
 
@@ -453,7 +530,7 @@ fn option_lines(editor: &Editor) -> Vec<(String, bool)> {
             )
         })
         .collect(),
-        Page::Modules => module_choices()
+        Page::Modules => module_choices(editor.module_category)
             .iter()
             .map(|(segment, label)| {
                 (
@@ -527,24 +604,55 @@ fn option_lines(editor: &Editor) -> Vec<(String, bool)> {
     }
 }
 
-fn module_choices() -> [(Segment, &'static str); 16] {
+fn module_choices(category: ModuleCategory) -> &'static [(Segment, &'static str)] {
+    match category {
+        ModuleCategory::Core => &[
+            (Segment::App, "App · Codex identity"),
+            (Segment::Model, "Model · model and reasoning"),
+            (Segment::Work, "Work · phase and active tool"),
+        ],
+        ModuleCategory::Usage => &[
+            (Segment::Context, "Context · pressure bar"),
+            (Segment::Tokens, "Tokens · input/cache/output"),
+            (Segment::RateLimits, "Limits · quota and reset"),
+        ],
+        ModuleCategory::Workspace => &[
+            (Segment::Git, "Git · branch and changes"),
+            (Segment::Worktree, "Worktree · linked workspace"),
+            (Segment::Cwd, "Directory · workspace path"),
+        ],
+        ModuleCategory::Activity => &[
+            (Segment::Tools, "Tools · recent activity"),
+            (Segment::Agents, "Agents · state and elapsed"),
+            (Segment::Plan, "Plan · progress"),
+            (Segment::Compactions, "Compactions · count"),
+        ],
+        ModuleCategory::Runtime => &[
+            (Segment::Safety, "Safety · sandbox and approval"),
+            (Segment::Elapsed, "Elapsed · session timer"),
+            (Segment::Status, "Status · source health"),
+        ],
+    }
+}
+
+fn full_segments() -> [Segment; 16] {
     [
-        (Segment::App, "App · Codex identity"),
-        (Segment::Model, "Model · model and reasoning"),
-        (Segment::Work, "Work · phase and active tool"),
-        (Segment::Context, "Context · pressure bar"),
-        (Segment::Tokens, "Tokens · input/cache/output"),
-        (Segment::RateLimits, "Limits · quota and reset"),
-        (Segment::Git, "Git · branch and changes"),
-        (Segment::Worktree, "Worktree · linked workspace"),
-        (Segment::Tools, "Tools · recent activity"),
-        (Segment::Agents, "Agents · state and elapsed"),
-        (Segment::Plan, "Plan · progress"),
-        (Segment::Compactions, "Compactions · count"),
-        (Segment::Safety, "Safety · sandbox and approval"),
-        (Segment::Elapsed, "Elapsed · session timer"),
-        (Segment::Cwd, "Directory · workspace path"),
-        (Segment::Status, "Status · source health"),
+        Segment::App,
+        Segment::Model,
+        Segment::Work,
+        Segment::Context,
+        Segment::Tokens,
+        Segment::RateLimits,
+        Segment::Git,
+        Segment::Worktree,
+        Segment::Tools,
+        Segment::Agents,
+        Segment::Plan,
+        Segment::Compactions,
+        Segment::Safety,
+        Segment::Elapsed,
+        Segment::Cwd,
+        Segment::Status,
     ]
 }
 
@@ -552,7 +660,7 @@ fn apply_preset(config: &mut Config, index: usize) {
     match index {
         0 => {
             config.display.rows = 3;
-            config.display.segments = module_choices().map(|choice| choice.0).to_vec();
+            config.display.segments = full_segments().to_vec();
         }
         1 => {
             config.display.rows = 2;
@@ -596,7 +704,7 @@ fn apply_source_preset(sources: &mut SourcesConfig, index: usize) {
 }
 
 fn preset_index(config: &Config) -> usize {
-    if config.display.rows == 3 && config.display.segments == module_choices().map(|item| item.0) {
+    if config.display.rows == 3 && config.display.segments == full_segments() {
         0
     } else if config.display.rows == 2
         && config.display.segments
@@ -665,7 +773,7 @@ fn truncate(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Editor, Outcome, Page, preset_index, source_index};
+    use super::{Editor, ModuleCategory, Outcome, Page, preset_index, source_index};
     use crate::config::{Config, Segment};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -685,6 +793,20 @@ mod tests {
         );
         assert!(!editor.config.display.segments.contains(&Segment::App));
         assert!(editor.dirty());
+    }
+
+    #[test]
+    fn module_categories_use_horizontal_navigation_without_leaving_the_page() {
+        let mut editor = Editor::new(Config::default());
+        editor.select_page(2);
+
+        editor.handle_key(key(KeyCode::Right)).unwrap();
+        assert_eq!(editor.page, Page::Modules);
+        assert_eq!(editor.module_category, ModuleCategory::Usage);
+        assert_eq!(editor.cursor, 0);
+
+        editor.handle_key(key(KeyCode::Tab)).unwrap();
+        assert_eq!(editor.page, Page::Appearance);
     }
 
     #[test]

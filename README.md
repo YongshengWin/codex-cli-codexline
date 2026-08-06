@@ -16,10 +16,26 @@ terminal capabilities are unavailable.
 
 ## 1. Quick start
 
-You need the official `codex` command, Git and Rust 1.85+.
+You only need the official `codex` command. The installer downloads a
+precompiled Codexline binary for your system and verifies its SHA-256 checksum;
+Rust and Cargo are not required.
+
+**macOS / Linux / WSL**
 
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
+```
+
+**Windows 10/11 PowerShell**
+
+```powershell
+irm https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.ps1 | iex
+```
+
+Then open a new terminal and run:
+
+```bash
 codexline config
 codexline doctor
 codexline
@@ -31,17 +47,19 @@ official `codex` executable.
 
 ### Updating an existing installation
 
-Reinstall the newest commit from `main`:
+Run the same installer again. It replaces only the managed executable and
+preserves your configuration:
 
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 codexline doctor
 ```
 
-Your configuration is preserved during updates. Pastel Syntax is the default
-for new configurations; to apply it to an existing installation, run
-`codexline config`, open **Appearance**, select **Pastel Syntax**, and press
-`Enter` to save.
+On Windows, rerun the PowerShell command above. To install a specific release,
+set `CODEXLINE_VERSION=v0.1.0` on macOS/Linux, or download that release with the
+PowerShell script's `-Version` parameter. Pastel Syntax is the default for new
+configurations; existing theme choices are intentionally preserved.
 
 | Command | What it does |
 | --- | --- |
@@ -143,80 +161,82 @@ inactive when Codexline is not running.
 
 ### 5.1 macOS
 
-With Rust already installed:
-
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-codexline config
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 ```
 
-Without Rust, install the Apple command-line tools and Rust first:
+The native Apple Silicon or Intel binary is installed to `~/.local/bin`. If
+that directory is not already on `PATH`, the installer prints the exact export
+command to add to your shell profile.
+
+### 5.2 Linux and WSL
 
 ```bash
-xcode-select --install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 ```
 
-### 5.2 Linux
-
-Debian/Ubuntu example:
-
-```bash
-sudo apt update
-sudo apt install -y build-essential curl git pkg-config
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-```
-
-Use the equivalent compiler, linker, Git and Rust packages on other
-distributions.
+The installer supports x86_64 and arm64 with portable musl builds. Install
+Codex and Codexline inside the same WSL distribution; do not invoke the Windows
+`.exe` from a Linux shell.
 
 ### 5.3 Windows 10/11
 
-Install Git, Rustup and Microsoft C++ Build Tools, then run in PowerShell:
+Run in PowerShell without administrator privileges:
 
 ```powershell
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-codexline doctor
-codexline config
+irm https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.ps1 | iex
 ```
 
-Cargo installs `codexline.exe`, normally under `%USERPROFILE%\.cargo\bin`.
-Native Windows uses ConPTY; see the verification table below before relying on
-it for critical work.
+The x64 executable is installed under `%LOCALAPPDATA%\Codexline\bin`; the
+installer adds that directory to the current user's `PATH`. Open a new terminal
+after the first installation. Native Windows uses ConPTY.
 
-### 5.4 WSL
+### 5.4 Uninstall
 
-Install Codex and Codexline inside the same WSL distribution and follow the
-Linux instructions. Do not invoke the Windows `.exe` from the Linux shell.
+macOS / Linux / WSL:
 
-### 5.5 Local source, update and uninstall
+```bash
+rm "$HOME/.local/bin/codexline"
+```
+
+Windows PowerShell:
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\Codexline\bin\codexline.exe"
+```
+
+You may also remove the now-empty directory from your user `PATH`.
+
+### 5.5 Developer installation from source
+
+Cargo is an optional developer channel. It compiles Codexline locally and
+requires Rust 1.85+, Git and the platform build toolchain:
 
 ```bash
 # Install from a clone
 cargo install --path . --locked
 
-# Update a Git installation
+# Install or update directly from main
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
 
-# Remove it
+# Remove a Cargo-managed installation
 cargo uninstall codex-cli-codexline
 ```
 
 ## 6. Compatibility and release status
 
-The current version is `0.1.0`: usable on the verified paths below, but not yet
-a polished stable release with signed prebuilt binaries and package-manager
-formulae.
+The current version is `0.1.0`. GitHub Releases provide checksum-verified
+precompiled archives; code signing and package-manager formulae remain future
+release-hardening work.
 
 | Environment | Backend | Verification |
 | --- | --- | --- |
 | macOS arm64 | POSIX PTY + ANSI | Tests, release build, installation and interactive terminal use |
 | Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 tests, release build, PTY, Ctrl+C, recovery and config TUI |
 | Other Linux | POSIX PTY + ANSI | Shared backend; broader distribution matrix pending |
-| Windows 10/11 | ConPTY + VT | Rust 1.85.1 cross-check passes; real-host runtime test pending |
+| Windows 10/11 x64 | ConPTY + VT | CI build/tests; real-host runtime test pending |
 | WSL | Linux PTY | Shared backend; Windows Terminal boundary test pending |
 | Pipes / CI / non-TTY | Direct fallback | Automated tests |
 

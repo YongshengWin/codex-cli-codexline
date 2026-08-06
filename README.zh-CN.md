@@ -15,10 +15,25 @@ Codexline 在 PTY/ConPTY 中运行官方 Codex CLI，并在终端底部增加响
 
 ## 1. 快速开始
 
-请先准备官方 `codex` 命令、Git 和 Rust 1.85+。
+普通用户只需准备官方 `codex` 命令。安装器会下载适合当前系统的预编译文件并校验
+SHA-256，不要求安装 Rust、Cargo 或本地编译工具链。
+
+**macOS / Linux / WSL**
 
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
+```
+
+**Windows 10/11 PowerShell**
+
+```powershell
+irm https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.ps1 | iex
+```
+
+打开新终端后执行：
+
+```bash
 codexline config
 codexline doctor
 codexline
@@ -29,15 +44,17 @@ codexline
 
 ### 更新已有安装
 
-重新安装 `main` 上的最新提交：
+重新执行同一条安装命令即可。安装器只替换其管理的程序文件，不会覆盖已有配置：
 
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 codexline doctor
 ```
 
-更新不会覆盖已有配置。Pastel Syntax 是新配置的默认主题；已有安装更新后，请运行
-`codexline config`，进入 **Appearance**，选择 **Pastel Syntax**，再按 `Enter` 保存。
+Windows 重新执行上面的 PowerShell 命令。macOS/Linux 可通过
+`CODEXLINE_VERSION=v0.1.0` 安装指定版本，PowerShell 脚本则支持 `-Version` 参数。
+Pastel Syntax 是新配置的默认主题，已有安装的主题选择会被保留。
 
 | 命令 | 功能 |
 | --- | --- |
@@ -133,77 +150,78 @@ codex plugin add codexline-events@codexline-local
 
 ### 5.1 macOS
 
-已经安装 Rust 时，直接执行：
-
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-codexline config
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 ```
 
-尚未安装 Rust 时，先安装 Apple 命令行工具和 Rust：
+安装器自动选择 Apple Silicon 或 Intel 版本，并安装到 `~/.local/bin`。如果该目录
+尚未加入 `PATH`，安装器会输出需要添加到 Shell 配置的准确命令。
+
+### 5.2 Linux 与 WSL
 
 ```bash
-xcode-select --install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
+curl --proto '=https' --tlsv1.2 -fsSL \
+  https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 ```
 
-### 5.2 Linux
-
-Debian/Ubuntu 示例：
-
-```bash
-sudo apt update
-sudo apt install -y build-essential curl git pkg-config
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-```
-
-其他发行版请安装等价的编译器、链接器、Git 和 Rust 软件包。
+安装器通过便携的 musl 构建支持 x86_64 和 arm64。WSL 请在同一个 Linux 发行版中
+安装 Codex 与 Codexline，不要从 Linux Shell 调用 Windows `.exe`。
 
 ### 5.3 Windows 10/11
 
-先安装 Git、Rustup 和 Microsoft C++ Build Tools，然后在 PowerShell 执行：
+在 PowerShell 中执行，无需管理员权限：
 
 ```powershell
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-codexline doctor
-codexline config
+irm https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.ps1 | iex
 ```
 
-Cargo 会安装 `codexline.exe`，通常位于 `%USERPROFILE%\.cargo\bin`。原生 Windows
-使用 ConPTY；用于关键工作前，请先阅读下方真实验证状态。
+安装器会把 x64 程序安装到 `%LOCALAPPDATA%\Codexline\bin`，并将其加入当前用户
+`PATH`。首次安装后请打开新终端。原生 Windows 使用 ConPTY。
 
-### 5.4 WSL
+### 5.4 卸载
 
-请在同一个 WSL 发行版内安装 Codex 和 Codexline，并按照 Linux 步骤操作；不要在
-Linux Shell 中直接调用 Windows `.exe`。
+macOS / Linux / WSL：
 
-### 5.5 本地源码、更新与卸载
+```bash
+rm "$HOME/.local/bin/codexline"
+```
+
+Windows PowerShell：
+
+```powershell
+Remove-Item "$env:LOCALAPPDATA\Codexline\bin\codexline.exe"
+```
+
+还可以从用户 `PATH` 中移除对应的空目录。
+
+### 5.5 开发者从源码安装
+
+Cargo 仅作为可选开发渠道。它会在本机编译 Codexline，需要 Rust 1.85+、Git 和
+对应平台的编译工具链：
 
 ```bash
 # 从已克隆的源码安装
 cargo install --path . --locked
 
-# 更新 Git 安装
+# 直接从 main 安装或更新
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
 
-# 卸载
+# 卸载 Cargo 管理的版本
 cargo uninstall codex-cli-codexline
 ```
 
 ## 6. 兼容性与版本状态
 
-当前版本为 `0.1.0`：下表中已验证的路径可以使用，但尚不是包含签名预编译文件和
-包管理器安装源的成熟稳定发行版。
+当前版本为 `0.1.0`。GitHub Releases 提供经过 SHA-256 校验的预编译压缩包；代码
+签名和包管理器安装源仍属于后续的发行加固工作。
 
 | 环境 | 后端 | 验证情况 |
 | --- | --- | --- |
 | macOS arm64 | POSIX PTY + ANSI | 测试、release 构建、安装和交互式终端使用 |
 | Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 测试、release、PTY、Ctrl+C、恢复和配置 TUI |
 | 其他 Linux | POSIX PTY + ANSI | 共用后端；更多发行版矩阵待补 |
-| Windows 10/11 | ConPTY + VT | Rust 1.85.1 交叉检查通过；真实主机运行测试待补 |
+| Windows 10/11 x64 | ConPTY + VT | CI 构建与测试；真实主机运行测试待补 |
 | WSL | Linux PTY | 共用后端；Windows Terminal 边界测试待补 |
 | 管道 / CI / 非 TTY | 直接降级 | 自动化测试 |
 

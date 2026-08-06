@@ -96,7 +96,7 @@ impl AgentPanelState {
     /// Returns true when the input belongs to the inspector and must not reach Codex.
     pub fn handle_input(&mut self, input: &[u8], agent_count: usize) -> bool {
         if self.mode == AgentPanelMode::Passive {
-            if input.contains(&0x07) && agent_count > 0 {
+            if contains_inspector_key(input, InspectorKey::Toggle) && agent_count > 0 {
                 self.mode = AgentPanelMode::List;
                 self.selected = self.selected.min(agent_count.saturating_sub(1));
                 return true;
@@ -105,34 +105,22 @@ impl AgentPanelState {
         }
         let mut offset = 0;
         while offset < input.len() {
-            let remaining = &input[offset..];
-            if remaining.starts_with(b"\x1b[A") || remaining.starts_with(b"\x1bOA") {
-                self.selected = self.selected.saturating_sub(1);
-                offset += 3;
-            } else if remaining.starts_with(b"\x1b[B") || remaining.starts_with(b"\x1bOB") {
-                self.selected = (self.selected + 1).min(agent_count.saturating_sub(1));
-                offset += 3;
-            } else if remaining.starts_with(b"\x1b[C") || remaining.starts_with(b"\x1bOC") {
-                if agent_count > 0 {
+            let (key, consumed) = decode_inspector_key(&input[offset..]);
+            match key {
+                InspectorKey::Up => self.selected = self.selected.saturating_sub(1),
+                InspectorKey::Down => {
+                    self.selected = (self.selected + 1).min(agent_count.saturating_sub(1));
+                }
+                InspectorKey::Right | InspectorKey::Enter if agent_count > 0 => {
                     self.mode = AgentPanelMode::Detail;
                 }
-                offset += 3;
-            } else if remaining.starts_with(b"\x1b[D") || remaining.starts_with(b"\x1bOD") {
-                self.back();
-                offset += 3;
-            } else if matches!(remaining[0], b'\r' | b'\n') && agent_count > 0 {
-                self.mode = AgentPanelMode::Detail;
-                offset += 1;
-            } else if remaining[0] == 0x1b {
-                self.back();
-                offset += 1;
-            } else if remaining[0] == 0x07 {
-                self.mode = AgentPanelMode::Passive;
-                offset += 1;
-            } else {
-                // Focused inspector owns regular input so it cannot leak into the Codex prompt.
-                offset += 1;
+                InspectorKey::Left | InspectorKey::Escape => self.back(),
+                InspectorKey::Toggle => self.mode = AgentPanelMode::Passive,
+                InspectorKey::Enter | InspectorKey::Right | InspectorKey::Other => {}
             }
+            // Focused inspector owns all input so partial/unknown sequences cannot leak into the
+            // Codex prompt. The decoder always consumes at least one byte.
+            offset += consumed;
         }
         true
     }
@@ -143,6 +131,75 @@ impl AgentPanelState {
             AgentPanelMode::List | AgentPanelMode::Passive => AgentPanelMode::Passive,
         };
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InspectorKey {
+    Toggle,
+    Up,
+    Down,
+    Right,
+    Left,
+    Enter,
+    Escape,
+    Other,
+}
+
+fn contains_inspector_key(mut input: &[u8], wanted: InspectorKey) -> bool {
+    while !input.is_empty() {
+        let (key, consumed) = decode_inspector_key(input);
+        if key == wanted {
+            return true;
+        }
+        input = &input[consumed..];
+    }
+    false
+}
+
+fn decode_inspector_key(input: &[u8]) -> (InspectorKey, usize) {
+    if input.is_empty() {
+        return (InspectorKey::Other, 1);
+    }
+    match input[0] {
+        b'\r' | b'\n' => return (InspectorKey::Enter, 1),
+        0x1b if input.len() == 1 => return (InspectorKey::Escape, 1),
+        0x1b => {}
+        _ => return (InspectorKey::Other, 1),
+    }
+
+    // F2 encodings used by macOS Terminal/xterm (SS3), vt100, and Kitty/CSI keyboard modes.
+    for sequence in [b"\x1bOQ".as_slice(), b"\x1b[12~", b"\x1b[1;1Q"] {
+        if input.starts_with(sequence) {
+            return (InspectorKey::Toggle, sequence.len());
+        }
+    }
+    for (sequence, key) in [
+        (b"\x1bOA".as_slice(), InspectorKey::Up),
+        (b"\x1bOB".as_slice(), InspectorKey::Down),
+        (b"\x1bOC".as_slice(), InspectorKey::Right),
+        (b"\x1bOD".as_slice(), InspectorKey::Left),
+    ] {
+        if input.starts_with(sequence) {
+            return (key, sequence.len());
+        }
+    }
+    if input.starts_with(b"\x1b[") {
+        if let Some(final_offset) = input[2..]
+            .iter()
+            .position(|byte| (0x40..=0x7e).contains(byte))
+            .map(|offset| offset + 2)
+        {
+            let key = match input[final_offset] {
+                b'A' => InspectorKey::Up,
+                b'B' => InspectorKey::Down,
+                b'C' => InspectorKey::Right,
+                b'D' => InspectorKey::Left,
+                _ => InspectorKey::Other,
+            };
+            return (key, final_offset + 1);
+        }
+    }
+    (InspectorKey::Escape, 1)
 }
 
 impl StatusRenderer {
@@ -249,7 +306,7 @@ fn agent_panel_layouts(
     let active = agents.iter().filter(|agent| agent.active).count();
     let total = usize::from(snapshot.agents_total.unwrap_or(0)).max(agents.len());
     let header = match panel.mode {
-        AgentPanelMode::Passive => format!("AGENTS {active}/{total} · Press Ctrl+G to inspect"),
+        AgentPanelMode::Passive => format!("AGENTS {active}/{total} · F2 inspect agents"),
         AgentPanelMode::List => format!(
             "AGENT INSPECTOR {active}/{} · ↑↓ choose · →/Enter open · ←/Esc close",
             total
@@ -1655,11 +1712,11 @@ mod tests {
         let snapshot = crate::state::StatusSnapshot::showcase();
         let mut panel = AgentPanelState::default();
         let passive = agent_panel_layouts(100, &snapshot, panel);
-        assert!(passive[0][0].1.contains("Press Ctrl+G to inspect"));
+        assert!(passive[0][0].1.contains("F2 inspect agents"));
         assert!(passive.iter().any(|row| row[0].1.contains("explore")));
 
-        assert!(panel.handle_input(&[0x07], snapshot.agents.len()));
-        assert!(panel.handle_input(b"\x1b[B\x1b[C", snapshot.agents.len()));
+        assert!(panel.handle_input(b"\x1bOQ", snapshot.agents.len()));
+        assert!(panel.handle_input(b"\x1b[1;1B\x1b[1;1C", snapshot.agents.len()));
         let detail = agent_panel_layouts(100, &snapshot, panel);
         assert!(detail.iter().any(|row| row[0].1.starts_with("Goal")));
         assert!(detail.iter().any(|row| row[0].1.starts_with("Latest")));
@@ -1668,6 +1725,17 @@ mod tests {
         let list = agent_panel_layouts(100, &snapshot, panel);
         assert!(list[0][0].1.contains("AGENT INSPECTOR"));
         assert!(list.iter().any(|row| row[0].1.starts_with("▶")));
+    }
+
+    #[test]
+    fn inspector_accepts_common_f2_encodings_without_stealing_ctrl_g() {
+        for f2 in [b"\x1bOQ".as_slice(), b"\x1b[12~", b"\x1b[1;1Q"] {
+            let mut panel = AgentPanelState::default();
+            assert!(panel.handle_input(f2, 2));
+        }
+        let mut passive = AgentPanelState::default();
+        assert!(!passive.handle_input(&[0x07], 2));
+        assert!(!passive.handle_input(b"\x1b[103;5u", 2));
     }
 
     #[test]

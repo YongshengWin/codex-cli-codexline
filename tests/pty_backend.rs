@@ -34,11 +34,18 @@ fn native_pty_or_conpty_runs_a_real_child() {
         .master
         .try_clone_reader()
         .expect("PTY output reader should be available");
+    let input = pair
+        .master
+        .take_writer()
+        .expect("PTY input writer should be available");
     let mut child = pair
         .slave
         .spawn_command(command)
         .expect("fixture should start inside the PTY");
     drop(pair.slave);
+    // This fixture is intentionally non-interactive. Closing input gives cmd.exe an explicit
+    // EOF and lets the Windows pseudo-console host tear down after `/C` completes.
+    drop(input);
 
     let (output_tx, output_rx) = mpsc::channel();
     thread::spawn(move || {

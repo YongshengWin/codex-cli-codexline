@@ -102,12 +102,12 @@ fn install(shim: &Path, executable: &Path) -> Result<ShimOutcome> {
     Ok(ShimOutcome::Installed(shim.to_path_buf()))
 }
 
-fn remove(shim: &Path, executable: &Path) -> Result<ShimOutcome> {
+fn remove(shim: &Path, _executable: &Path) -> Result<ShimOutcome> {
     if !shim.exists() && fs::symlink_metadata(shim).is_err() {
         return Ok(ShimOutcome::Unchanged);
     }
     #[cfg(unix)]
-    let owned = marker_is_owned(shim) || points_to_executable(shim, executable);
+    let owned = marker_is_owned(shim) || points_to_executable(shim, _executable);
     #[cfg(windows)]
     let owned = marker_is_owned(shim);
     anyhow::ensure!(
@@ -126,7 +126,9 @@ fn remove(shim: &Path, executable: &Path) -> Result<ShimOutcome> {
 
 #[cfg(test)]
 mod tests {
-    use super::{ShimOutcome, marker_path, reconcile_at};
+    use super::reconcile_at;
+    #[cfg(unix)]
+    use super::{ShimOutcome, marker_path};
     use crate::config::LaunchMode;
     use std::fs;
 

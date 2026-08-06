@@ -77,16 +77,15 @@ configurations; existing theme choices are intentionally preserved.
 
 ### 2.1 Running HUD
 
-![Cropped terminal view of the Codexline HUD](assets/screenshot-hud.png)
+![Vector preview of the Codexline HUD](assets/hud-preview.svg)
 
 ### 2.2 Keyboard-first configuration with live preview
 
-![Cropped terminal view of the Codexline configuration preview](assets/screenshot-config.png)
+![Full keyboard-driven Codexline configuration interface](assets/config-current.svg)
 
-These are privacy-safe crops of the terminal content only—no cmux chrome,
-sidebars, tabs or personal workspace data. The background comes from the
-terminal; visible rows and fields adapt to width, theme and available Codex
-data.
+These are privacy-safe vector previews—no cmux chrome, sidebars, tabs or
+personal workspace data. The background follows the terminal; visible rows and
+fields adapt to width, theme and available Codex data.
 
 ## 3. What Codexline adds
 

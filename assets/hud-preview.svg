@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="238" viewBox="0 0 1200 238" role="img" aria-labelledby="title desc">
+  <title id="title">Codexline rich HUD</title>
+  <desc id="desc">A privacy-safe vector preview of the three-row Codexline HUD with model, work state, Git, directory, context usage, account limits, tools, safety and agents.</desc>
+  <rect width="1200" height="238" rx="16" fill="#242228"/>
+  <rect x="1" y="1" width="1198" height="236" rx="15" fill="none" stroke="#514d57"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="28" y="34" fill="#77737d" font-size="15">LIVE SESSION · transparent terminal theme · responsive layout</text>
+    <line x1="28" y1="48" x2="1172" y2="48" stroke="#514d57"/>
+    <circle cx="35" cy="78" r="7" fill="#a4df00"/>
+    <text x="52" y="85" fill="#a4df00" font-size="21" font-weight="700">Codex</text>
+    <text x="135" y="85" fill="#77737d" font-size="20">│</text>
+    <text x="158" y="85" fill="#00d7ef" font-size="20">gpt-5.6-sol high</text>
+    <text x="365" y="85" fill="#77737d" font-size="20">│</text>
+    <text x="388" y="85" fill="#ff86b7" font-size="20" font-weight="700">working · exec</text>
+    <text x="560" y="85" fill="#77737d" font-size="20">│</text>
+    <text x="584" y="85" fill="#b6b1bb" font-size="20">18s</text>
+    <text x="28" y="119" fill="#d7aaff" font-size="19">git:(feat/statusline*) S1 M3 ↑2</text>
+    <text x="393" y="119" fill="#77737d" font-size="19">│</text>
+    <text x="417" y="119" fill="#d7aaff" font-size="19">WT codexline-agent-2 ↗</text>
+    <text x="700" y="119" fill="#77737d" font-size="19">│</text>
+    <text x="724" y="119" fill="#00d7ef" font-size="19">DIR ~/project/codexline</text>
+    <text x="28" y="155" fill="#ff86b7" font-size="19" font-weight="700">CTX</text>
+    <rect x="76" y="137" width="108" height="22" rx="3" fill="#44323d" stroke="#ff86b7"/>
+    <rect x="78" y="139" width="45" height="18" rx="2" fill="#ff86b7"/>
+    <text x="196" y="155" fill="#ff86b7" font-size="19" font-weight="700">42% used · 84.0k/200.0k</text>
+    <text x="482" y="155" fill="#77737d" font-size="19">│</text>
+    <text x="506" y="155" fill="#ffd75f" font-size="19">5H 66% · WEEK 35% · reset 2d 5h · +1</text>
+    <text x="28" y="190" fill="#00d7ef" font-size="19">tools: exec ×3 · patch ×2</text>
+    <text x="330" y="190" fill="#77737d" font-size="19">│</text>
+    <text x="354" y="190" fill="#ff6b7a" font-size="19">workspace · approve for me</text>
+    <text x="664" y="190" fill="#77737d" font-size="19">│</text>
+    <text x="688" y="190" fill="#6ee7a8" font-size="19">ACCOUNT+HOOK ✓</text>
+    <text x="28" y="222" fill="#00d7ef" font-size="18" font-weight="700">AGENTS 2/3 · F2 inspect</text>
+    <text x="288" y="222" fill="#67b7ff" font-size="18">● architecture 24s · mapping data flow</text>
+    <text x="730" y="222" fill="#67b7ff" font-size="18">● quality 18s · verifying tests</text>
+  </g>
+</svg>

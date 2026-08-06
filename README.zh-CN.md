@@ -71,14 +71,15 @@ Pastel Syntax 是新配置的默认主题，已有安装的主题选择会被保
 
 ### 2.1 运行中的 HUD
 
-![仅包含 Codexline HUD 的终端局部截图](assets/screenshot-hud.png)
+![Codexline HUD 高清矢量预览](assets/hud-preview.svg)
 
 ### 2.2 键盘配置与固定底部实时预览
 
-![仅包含 Codexline 配置预览的终端局部截图](assets/screenshot-config.png)
+![完整的 Codexline 键盘配置界面](assets/config-current.svg)
 
-以上图片只截取终端内容，不包含 cmux 边框、侧栏、标签或个人工作区信息。背景
-沿用终端主题，行数与字段会根据宽度、主题和 Codex 当前能够提供的数据自动调整。
+以上均为隐私安全的高清矢量预览，不包含 cmux 边框、侧栏、标签或个人工作区
+信息。背景沿用终端主题，行数与字段会根据宽度、主题和 Codex 当前能够提供的
+数据自动调整。
 
 ## 3. Codexline 能展示什么
 

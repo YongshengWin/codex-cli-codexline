@@ -38,11 +38,35 @@ fn native_pty_or_conpty_supports_a_bidirectional_session() {
         .spawn_command(command)
         .expect("fixture should start inside the PTY");
     drop(pair.slave);
+    let (query_tx, _query_rx) = mpsc::channel();
     let (output_tx, output_rx) = mpsc::channel();
     let reader_thread = thread::spawn(move || {
         let mut output = Vec::new();
-        let result = reader.read_to_end(&mut output).map(|_| output);
-        let _ = output_tx.send(result);
+        let mut buffer = [0_u8; 4096];
+        let mut reported_query = false;
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => {
+                    let _ = output_tx.send(Ok(output));
+                    break;
+                }
+                Ok(count) => {
+                    output.extend_from_slice(&buffer[..count]);
+                    if !reported_query
+                        && output
+                            .windows(b"\x1b[6n".len())
+                            .any(|window| window == b"\x1b[6n")
+                    {
+                        let _ = query_tx.send(());
+                        reported_query = true;
+                    }
+                }
+                Err(error) => {
+                    let _ = output_tx.send(Err(error));
+                    break;
+                }
+            }
+        }
     });
 
     #[cfg(windows)]
@@ -50,6 +74,9 @@ fn native_pty_or_conpty_supports_a_bidirectional_session() {
         // ConPTY asks its terminal emulator for the cursor position (`CSI 6 n`) during
         // startup. Codexline normally relays the real terminal's reply; this headless test
         // must provide the conventional row 1, column 1 response itself.
+        _query_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("ConPTY should query the cursor position during startup");
         input
             .write_all(b"\x1b[1;1R")
             .expect("ConPTY cursor-position reply should be writable");

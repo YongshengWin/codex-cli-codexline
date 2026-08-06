@@ -114,14 +114,46 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
     }
     if let Some(value) = string(event, "model") {
         snapshot.model = Some(value.into());
+        snapshot.model_live = true;
     }
+    if let Some(value) =
+        string(event, "reasoning_effort").or_else(|| string(event, "model_reasoning_effort"))
+    {
+        snapshot.reasoning = Some(value.into());
+        snapshot.model_live = true;
+    }
+    if let Some(value) = string(event, "cwd") {
+        snapshot.cwd = Some(value.into());
+    }
+    let mut settings_updated = false;
     if let Some(value) = string(event, "permission_mode") {
-        snapshot.safety = Some(compact_permission(value).into());
+        snapshot.permission_mode = Some(compact_permission(value).into());
+        settings_updated = true;
+    }
+    if let Some(value) = string(event, "sandbox_mode") {
+        snapshot.sandbox = Some(value.into());
+        settings_updated = true;
+    }
+    if let Some(value) = string(event, "approval_policy") {
+        snapshot.approval_policy = Some(value.into());
+        settings_updated = true;
+    }
+    if let Some(value) = string(event, "approvals_reviewer") {
+        snapshot.approvals_reviewer = Some(value.into());
+        settings_updated = true;
+    }
+    if settings_updated {
+        snapshot.settings_live = true;
     }
 
     match string(event, "hook_event_name").unwrap_or_default() {
         "SessionStart" => snapshot.work = Some("ready".into()),
-        "UserPromptSubmit" => snapshot.work = Some("thinking".into()),
+        "UserPromptSubmit" => {
+            snapshot.work = Some("thinking".into());
+            if !snapshot.live_session_active {
+                clear_unobserved_context(snapshot);
+            }
+        }
         "PreToolUse" => {
             let tool = string(event, "tool_name").unwrap_or("tool");
             snapshot.work = Some(format!("running · {}", compact_tool(tool)));
@@ -176,6 +208,16 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
         "SessionEnd" => snapshot.work = Some("ended".into()),
         _ => {}
     }
+}
+
+fn clear_unobserved_context(snapshot: &mut StatusSnapshot) {
+    snapshot.context_percent = None;
+    snapshot.context_used = None;
+    snapshot.context_window = None;
+    snapshot.input_tokens = None;
+    snapshot.cached_input_tokens = None;
+    snapshot.output_tokens = None;
+    snapshot.context_live = false;
 }
 
 fn string<'a>(event: &'a Value, key: &str) -> Option<&'a str> {
@@ -250,6 +292,7 @@ fn compact_permission(value: &str) -> &str {
         "acceptEdits" => "accept edits",
         "dontAsk" => "don't ask",
         "bypassPermissions" => "bypass permissions",
+        "autoReview" | "auto_review" | "guardian_subagent" => "approve for me",
         other => other,
     }
 }
@@ -308,5 +351,34 @@ mod tests {
         );
         assert_eq!(snapshot.agents_active, Some(1));
         assert_eq!(snapshot.agents_total, Some(1));
+    }
+
+    #[test]
+    fn hook_refreshes_runtime_settings_and_invalidates_unobserved_context() {
+        let mut runtime = RuntimeState::default();
+        let mut snapshot = StatusSnapshot {
+            model: Some("old-model".into()),
+            context_percent: Some(0),
+            context_used: Some(0),
+            ..StatusSnapshot::default()
+        };
+        apply_event(
+            &json!({
+                "hook_event_name": "UserPromptSubmit",
+                "model": "new-model",
+                "reasoning_effort": "high",
+                "cwd": "/tmp/project",
+                "permission_mode": "autoReview"
+            }),
+            &mut runtime,
+            &mut snapshot,
+        );
+        assert_eq!(snapshot.model.as_deref(), Some("new-model"));
+        assert!(snapshot.model_live);
+        assert_eq!(snapshot.reasoning.as_deref(), Some("high"));
+        assert_eq!(snapshot.cwd.as_deref(), Some("/tmp/project"));
+        assert_eq!(snapshot.permission_mode.as_deref(), Some("approve for me"));
+        assert!(snapshot.settings_live);
+        assert_eq!(snapshot.context_percent, None);
     }
 }

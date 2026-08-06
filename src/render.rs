@@ -511,13 +511,17 @@ fn segment_text(
 ) -> Option<String> {
     match segment {
         Segment::App => Some(format!("{spinner} Codex")),
-        Segment::Model => snapshot
-            .model
-            .as_ref()
-            .map(|model| match &snapshot.reasoning {
+        Segment::Model => snapshot.model.as_ref().map(|model| {
+            let value = match &snapshot.reasoning {
                 Some(reasoning) => format!("{model} {reasoning}"),
                 None => model.clone(),
-            }),
+            };
+            if snapshot.model_live {
+                value
+            } else {
+                format!("{value} · default")
+            }
+        }),
         Segment::Reasoning => snapshot
             .reasoning
             .as_ref()
@@ -593,7 +597,7 @@ fn segment_text(
             .compactions
             .filter(|count| *count > 0)
             .map(|count| format!("compact ×{count}")),
-        Segment::Safety => snapshot.safety.as_deref().map(sanitize_dynamic),
+        Segment::Safety => safety_text(snapshot),
         Segment::Elapsed => Some(format!("{elapsed}s")),
         Segment::Cwd => Some(format!("DIR {cwd}")),
         Segment::ProjectRoot => snapshot
@@ -604,10 +608,14 @@ fn segment_text(
             .session_id
             .as_deref()
             .map(|id| format!("thread {}", sanitize_dynamic(id))),
-        Segment::Status => Some(if snapshot.events_active && snapshot.app_server_active {
-            "H+A ✓".into()
+        Segment::Status => Some(if snapshot.live_session_active && snapshot.events_active {
+            "LIVE+HOOK ✓".into()
+        } else if snapshot.live_session_active {
+            "LIVE ✓".into()
+        } else if snapshot.events_active && snapshot.app_server_active {
+            "ACCOUNT+HOOK ✓".into()
         } else if snapshot.app_server_active {
-            "APP ✓".into()
+            "ACCOUNT ✓".into()
         } else if snapshot.events_active {
             "HOOK ✓".into()
         } else {
@@ -618,10 +626,12 @@ fn segment_text(
         } else {
             "HOOK —".into()
         }),
-        Segment::AppServerHealth => Some(if snapshot.app_server_active {
-            "APP ✓".into()
+        Segment::AppServerHealth => Some(if snapshot.live_session_active {
+            "LIVE ✓".into()
+        } else if snapshot.app_server_active {
+            "ACCOUNT ✓".into()
         } else {
-            "APP —".into()
+            "ACCOUNT —".into()
         }),
     }
 }
@@ -673,7 +683,48 @@ fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
             compact_number(window)
         ));
     }
+    if !snapshot.context_live {
+        text.push_str(" · start");
+    }
     Some(text)
+}
+
+fn safety_text(snapshot: &StatusSnapshot) -> Option<String> {
+    let sandbox = snapshot.sandbox.as_deref().map(|value| match value {
+        "workspace-write" | "workspaceWrite" => "workspace",
+        "read-only" | "readOnly" => "read-only",
+        "danger-full-access" | "dangerFullAccess" => "full access",
+        other => other,
+    });
+    let mode = snapshot
+        .permission_mode
+        .as_deref()
+        .filter(|value| *value != "default")
+        .or_else(|| match snapshot.approvals_reviewer.as_deref() {
+            Some("auto_review" | "autoReview" | "guardian_subagent") => Some("approve for me"),
+            Some("user") | None => snapshot
+                .approval_policy
+                .as_deref()
+                .map(|value| match value {
+                    "on-request" | "onRequest" => "ask",
+                    "never" => "never ask",
+                    "untrusted" | "unlessTrusted" => "ask untrusted",
+                    other => other,
+                }),
+            Some(other) => Some(other),
+        });
+    let mut parts = [sandbox, mode]
+        .into_iter()
+        .flatten()
+        .map(sanitize_dynamic)
+        .collect::<Vec<_>>();
+    if parts.is_empty() {
+        return None;
+    }
+    if !snapshot.settings_live {
+        parts.push("default".into());
+    }
+    Some(parts.join(" · "))
 }
 
 fn context_percent(snapshot: &StatusSnapshot) -> Option<u8> {
@@ -1371,6 +1422,7 @@ mod tests {
         };
         let mut snapshot = StatusSnapshot {
             context_percent: Some(0),
+            context_live: true,
             ..StatusSnapshot::default()
         };
         let fresh = status_layouts(80, &display, &snapshot, 8);
@@ -1379,6 +1431,33 @@ mod tests {
         snapshot.context_percent = Some(75);
         let used = status_layouts(80, &display, &snapshot, 8);
         assert_eq!(used[0][0].1, "CTX ████░ 75% used");
+    }
+
+    #[test]
+    fn startup_settings_are_labeled_and_auto_review_is_not_rendered_as_ask() {
+        let display = DisplayConfig {
+            rows: 1,
+            segments: vec![Segment::Model, Segment::Safety, Segment::Context],
+            ..DisplayConfig::default()
+        };
+        let snapshot = StatusSnapshot {
+            model: Some("gpt-start".into()),
+            reasoning: Some("medium".into()),
+            context_percent: Some(0),
+            sandbox: Some("workspace-write".into()),
+            approval_policy: Some("on-request".into()),
+            approvals_reviewer: Some("guardian_subagent".into()),
+            ..StatusSnapshot::default()
+        };
+        let text = status_layouts(200, &display, &snapshot, 8)
+            .into_iter()
+            .flatten()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert!(text.contains("gpt-start medium · default"));
+        assert!(text.contains("workspace · approve for me · default"));
+        assert!(text.contains("CTX ░░░░░ 0% used · start"));
     }
 
     #[test]
@@ -1427,7 +1506,7 @@ mod tests {
             "agents 2/3",
             "thread thr_showcase",
             "HOOK ✓",
-            "APP ✓",
+            "LIVE ✓",
         ] {
             assert!(text.contains(expected), "missing `{expected}` in `{text}`");
         }
@@ -1438,7 +1517,7 @@ mod tests {
         let line = preview_line(90, &DisplayConfig::default());
         assert!(line.contains("git:(feat/statusline*)"));
         assert!(line.contains("DIR ~/pro/codex-cli-codexline"));
-        assert!(line.contains("H+A ✓"));
+        assert!(line.contains("LIVE+HOOK ✓"));
     }
 
     #[test]

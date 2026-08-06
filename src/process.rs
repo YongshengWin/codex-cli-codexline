@@ -16,6 +16,7 @@ use crate::app_server::{AppServerSource, ProtocolProxy};
 use crate::config::DisplayConfig;
 use crate::events::EventServer;
 use crate::render::{StatusRenderer, TerminalGuard};
+use crate::sources;
 use crate::state::StatusSnapshot;
 
 #[derive(Debug, Clone, Copy)]
@@ -320,6 +321,7 @@ fn prepare_pty(
     let terminal = TerminalGuard::enter(child_rows, reserved_rows).map_err(before)?;
 
     let snapshot = Arc::new(RwLock::new(snapshot));
+    sources::start_local_refresh(Arc::clone(&snapshot));
     let event_server = EventServer::start(Arc::clone(&snapshot)).ok();
 
     let proxy = remote_proxy

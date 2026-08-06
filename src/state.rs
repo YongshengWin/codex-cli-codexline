@@ -27,10 +27,12 @@ pub struct RateLimitWindow {
 pub struct StatusSnapshot {
     pub model: Option<String>,
     pub reasoning: Option<String>,
+    pub model_live: bool,
     pub work: Option<String>,
     pub context_percent: Option<u8>,
     pub context_used: Option<u64>,
     pub context_window: Option<u64>,
+    pub context_live: bool,
     pub input_tokens: Option<u64>,
     pub cached_input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
@@ -53,10 +55,15 @@ pub struct StatusSnapshot {
     pub plan_completed: Option<u16>,
     pub plan_total: Option<u16>,
     pub compactions: Option<u16>,
-    pub safety: Option<String>,
+    pub sandbox: Option<String>,
+    pub approval_policy: Option<String>,
+    pub approvals_reviewer: Option<String>,
+    pub permission_mode: Option<String>,
+    pub settings_live: bool,
     pub session_id: Option<String>,
     pub events_active: bool,
     pub app_server_active: bool,
+    pub live_session_active: bool,
 }
 
 impl StatusSnapshot {
@@ -64,10 +71,12 @@ impl StatusSnapshot {
         Self {
             model: Some("gpt-5.6-sol".into()),
             reasoning: Some("high".into()),
+            model_live: true,
             work: Some("exec 8s".into()),
             context_percent: Some(42),
             context_used: Some(84_000),
             context_window: Some(200_000),
+            context_live: true,
             input_tokens: Some(72_400),
             cached_input_tokens: Some(51_200),
             output_tokens: Some(8_600),
@@ -127,10 +136,15 @@ impl StatusSnapshot {
             plan_completed: Some(2),
             plan_total: Some(4),
             compactions: Some(1),
-            safety: Some("workspace · ask".into()),
+            sandbox: Some("workspace-write".into()),
+            approval_policy: Some("on-request".into()),
+            approvals_reviewer: Some("auto_review".into()),
+            permission_mode: None,
+            settings_live: true,
             session_id: Some("thr_showcase".into()),
             events_active: true,
             app_server_active: true,
+            live_session_active: true,
         }
     }
 }

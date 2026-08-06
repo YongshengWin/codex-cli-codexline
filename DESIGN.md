@@ -159,13 +159,19 @@ experimental；它永远不能作为默认值或启动必需条件。
 本地探针在后台、带缓存执行：
 
 - Git branch、dirty/staged、ahead/behind、worktree。
+- Codex 持久化配置中的 model、reasoning、sandbox、approval policy 和 reviewer。
 - 当前目录和项目根。
 - 会话/当前 turn 耗时。
 - Codex 和 Codexline 版本。
 - 终端宽度、主机名和时钟（可选）。
 
-Git 默认 TTL 为 2 秒，单次超时 100 ms；相同 repo 的并发请求合并。文件系统
+Git 与 Codex 配置默认每 3 秒刷新，Git 子命令单次超时 100 ms；相同 repo 的并发请求合并。文件系统
 watcher 只用来使缓存失效，不能触发高频完整 `git status`。
+
+每个可能变化的字段必须保留来源/新鲜度语义。独立 sidecar 只能标记为 `ACCOUNT`，
+不能标记为当前会话 `LIVE`；启动配置必须显示 `default`，新会话初始 context 必须显示
+`start`。当前 turn 开始后若没有 Hooks 或 proxy 提供真值，应隐藏未知数据，不得继续
+展示过期值。禁止解析 Codex 屏幕文本来补齐状态。
 
 ## 6. 版本化状态模型
 

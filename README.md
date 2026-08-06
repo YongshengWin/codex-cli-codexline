@@ -95,6 +95,25 @@ data.
 | Activity | Recent tools, plan progress, compactions, active/total agents |
 | Runtime | Sandbox, approval mode, permissions, data-source health |
 
+### Data freshness
+
+Codexline never presents an independent sidecar as the active Codex session.
+Its health labels describe the actual source:
+
+| Label | Meaning |
+| --- | --- |
+| `ACCOUNT` | Independent read-only app-server used for account limits only |
+| `HOOK` | The active Codex session has delivered a supported lifecycle event |
+| `LIVE` | Experimental protocol proxy is observing the active session directly |
+| `default` / `start` | Startup value; not yet confirmed by a runtime event |
+
+Model, reasoning and permission changes persisted by Codex are refreshed within
+about three seconds. Git/worktree state is also refreshed every three seconds
+off the PTY relay path. Hooks refresh model, directory, work and permission mode
+on the next supported event. Context and token values are hidden after a turn
+starts unless the active-session proxy supplies real usage; Codexline does not
+invent or scrape those values from terminal text.
+
 When Codex exposes subagent activity, the Agent Inspector expands below the main
 HUD. Press `Ctrl+G`, select an agent with `↑`/`↓`, and press `Enter` to inspect
 its goal and latest available message. Unknown fields are omitted rather than
@@ -146,7 +165,8 @@ Linux and WSL. On Windows, run `codexline doctor` to print the resolved path.
 
 ### Optional live events
 
-The bundled `codexline-events` integration supplies richer tool, agent, plan,
+The bundled `codexline-events` integration supplies fresher model, directory,
+permission, tool, agent, plan,
 approval and compaction events. From a cloned repository:
 
 ```bash

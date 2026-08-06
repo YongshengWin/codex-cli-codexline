@@ -274,11 +274,11 @@ fn configure_linear() -> Result<i32> {
 
     println!("\nCodexline setup · Data sources (5/6)\n");
     println!("  1  Safe sidecar (recommended)");
-    println!("     Quota plus local probes; a data-source failure cannot stop Codex.\n");
+    println!("     Account limits, Hooks, and refreshed config/Git state.\n");
     println!("  2  Local only");
-    println!("     No app-server process; Git, directory, safety, and elapsed time.\n");
+    println!("     Hooks and refreshed config/Git state; no account sidecar.\n");
     println!("  3  Experimental live proxy");
-    println!("     Live thread data, but a WebSocket disconnect can terminate Codex.\n");
+    println!("     Exact session events, but a WebSocket disconnect can terminate Codex.\n");
     let source_default = source_preset_number(&config.sources);
     let source = prompt(&format!("Choose [{source_default}]: "))?;
     apply_source_preset(

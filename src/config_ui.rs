@@ -659,9 +659,9 @@ fn option_lines(editor: &Editor) -> Vec<(String, bool)> {
             lines
         }
         Page::Sources => [
-            "Safe sidecar · recommended",
-            "Local only",
-            "Experimental live proxy · may disconnect Codex",
+            "Safe · account + hooks + refreshed local state · recommended",
+            "Local · hooks + refreshed local state",
+            "Live proxy · exact session events · may disconnect Codex",
         ]
         .into_iter()
         .enumerate()

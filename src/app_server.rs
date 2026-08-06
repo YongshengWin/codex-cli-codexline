@@ -154,6 +154,7 @@ fn relay_protocol(
     let _ = upstream.get_mut().set_nonblocking(true);
     if let Ok(mut state) = snapshot.write() {
         state.app_server_active = true;
+        state.live_session_active = true;
     }
     let mut requests = HashMap::<String, String>::new();
     let mut to_upstream = VecDeque::<Message>::new();
@@ -164,7 +165,7 @@ fn relay_protocol(
             match downstream.read() {
                 Ok(message) => {
                     progressed = true;
-                    observe_client_message(&message, &mut requests);
+                    observe_client_message(&message, &mut requests, &snapshot);
                     to_upstream.push_back(message);
                 }
                 Err(error) if is_would_block(&error) => {}
@@ -232,7 +233,11 @@ fn is_would_block(error: &tungstenite::Error) -> bool {
     matches!(error, tungstenite::Error::Io(io) if io.kind() == std::io::ErrorKind::WouldBlock)
 }
 
-fn observe_client_message(message: &Message, requests: &mut HashMap<String, String>) {
+fn observe_client_message(
+    message: &Message,
+    requests: &mut HashMap<String, String>,
+    snapshot: &Arc<RwLock<StatusSnapshot>>,
+) {
     let Some(text) = message.to_text().ok() else {
         return;
     };
@@ -243,7 +248,58 @@ fn observe_client_message(message: &Message, requests: &mut HashMap<String, Stri
     else {
         return;
     };
+    if matches!(method, "thread/start" | "thread/resume" | "turn/start") {
+        if let (Some(params), Ok(mut state)) = (value.get("params"), snapshot.write()) {
+            apply_runtime_params(params, &mut state);
+        }
+    }
     requests.insert(id.to_string(), method.to_owned());
+}
+
+fn apply_runtime_params(params: &Value, snapshot: &mut StatusSnapshot) {
+    if let Some(model) = params.get("model").and_then(Value::as_str) {
+        snapshot.model = Some(model.into());
+        snapshot.model_live = true;
+    }
+    if let Some(reasoning) = params
+        .get("effort")
+        .or_else(|| params.get("reasoningEffort"))
+        .and_then(Value::as_str)
+    {
+        snapshot.reasoning = Some(reasoning.into());
+        snapshot.model_live = true;
+    }
+    if let Some(cwd) = params.get("cwd").and_then(Value::as_str) {
+        snapshot.cwd = Some(cwd.into());
+    }
+
+    let mut settings_updated = false;
+    if let Some(policy) = params.get("approvalPolicy").and_then(Value::as_str) {
+        snapshot.approval_policy = Some(policy.into());
+        settings_updated = true;
+    }
+    if let Some(reviewer) = params.get("approvalsReviewer").and_then(Value::as_str) {
+        snapshot.approvals_reviewer = Some(reviewer.into());
+        settings_updated = true;
+    }
+    if let Some(permissions) = params.get("permissions").and_then(Value::as_str) {
+        snapshot.permission_mode = Some(permissions.into());
+        settings_updated = true;
+    }
+    if let Some(sandbox) = params.get("sandbox").and_then(Value::as_str) {
+        snapshot.sandbox = Some(sandbox.into());
+        settings_updated = true;
+    }
+    if let Some(sandbox) = params
+        .pointer("/sandboxPolicy/type")
+        .and_then(Value::as_str)
+    {
+        snapshot.sandbox = Some(sandbox.into());
+        settings_updated = true;
+    }
+    if settings_updated {
+        snapshot.settings_live = true;
+    }
 }
 
 fn observe_server_message(
@@ -464,11 +520,12 @@ fn apply_token_usage(value: &Value, snapshot: &mut StatusSnapshot) {
         ),
         _ => None,
     };
+    snapshot.context_live = true;
 }
 
 #[cfg(test)]
 mod tests {
-    use super::apply_message;
+    use super::{apply_message, apply_runtime_params};
     use crate::state::StatusSnapshot;
     use serde_json::json;
 
@@ -530,5 +587,26 @@ mod tests {
             snapshot.agents[0].message.as_deref(),
             Some("Found the layout")
         );
+    }
+
+    #[test]
+    fn live_turn_params_refresh_model_and_permissions() {
+        let mut snapshot = StatusSnapshot::default();
+        apply_runtime_params(
+            &json!({
+                "model": "gpt-live",
+                "effort": "xhigh",
+                "cwd": "/workspace/live",
+                "approvalPolicy": "onRequest",
+                "approvalsReviewer": "auto_review",
+                "sandboxPolicy": {"type": "workspaceWrite"}
+            }),
+            &mut snapshot,
+        );
+        assert_eq!(snapshot.model.as_deref(), Some("gpt-live"));
+        assert!(snapshot.model_live);
+        assert_eq!(snapshot.sandbox.as_deref(), Some("workspaceWrite"));
+        assert_eq!(snapshot.approvals_reviewer.as_deref(), Some("auto_review"));
+        assert!(snapshot.settings_live);
     }
 }

@@ -124,7 +124,7 @@ lost after the official CLI has attached cannot be hot-switched, so Codexline
 shows `LIVE !` instead of silently retaining stale values.
 
 When Codex exposes subagent activity, the Agent Inspector expands below the main
-HUD. Press `F2`, select an agent with `↑`/`↓`, and press `Enter` to inspect
+HUD. Press `F2`, select an agent with `↑`/`↓` (or `j`/`k`), and press `Enter` to inspect
 its goal and latest available message. Unknown fields are omitted rather than
 rendered as misleading zeroes.
 

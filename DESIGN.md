@@ -374,11 +374,11 @@ East Asian Width 计算，不能用字符串字节数。
 
 当官方 app-server 或 Hooks 报告子代理后，`bottom` 前端自动在状态栏下展开最多三条
 代理行，显示运行/完成状态、角色、耗时和最新活动。被动展示不接管任何按键；行首
-明确显示 `F2 inspect agents`。用户进入焦点后，`↑/↓` 选择、`Enter` 打开只读详情、
+明确显示 `F2 inspect agents`。用户进入焦点后，`↑/↓` 或 `j/k` 选择、`Enter` 打开只读详情、
 `Esc` 返回或关闭。详情只展示官方协议提供的 prompt、状态和 agent message，不读取
 rollout JSONL 或私有 SQLite。
 
-输入路由只识别 F2 的 SS3、VT 和 CSI 增强键盘编码，以及面板已聚焦时的导航键。
+输入路由识别 F2 的 SS3、VT、CSI 和 Kitty 私有键码，以及面板已聚焦时的导航键。
 其他时候终端字节必须原样转发给 Codex，尤其不能抢占官方的 `Ctrl+G` 外部编辑器。
 面板行数变化通过 PTY resize 调整保留区；小终端优先保留 Codex 至少四行可用区域
 并裁剪 Inspector。

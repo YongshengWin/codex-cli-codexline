@@ -162,6 +162,8 @@ fn decode_inspector_key(input: &[u8]) -> (InspectorKey, usize) {
     }
     match input[0] {
         b'\r' | b'\n' => return (InspectorKey::Enter, 1),
+        b'j' => return (InspectorKey::Down, 1),
+        b'k' => return (InspectorKey::Up, 1),
         0x1b if input.len() == 1 => return (InspectorKey::Escape, 1),
         0x1b => {}
         _ => return (InspectorKey::Other, 1),
@@ -189,11 +191,26 @@ fn decode_inspector_key(input: &[u8]) -> (InspectorKey, usize) {
             .position(|byte| (0x40..=0x7e).contains(byte))
             .map(|offset| offset + 2)
         {
-            let key = match input[final_offset] {
-                b'A' => InspectorKey::Up,
-                b'B' => InspectorKey::Down,
-                b'C' => InspectorKey::Right,
-                b'D' => InspectorKey::Left,
+            let final_byte = input[final_offset];
+            let codepoint = std::str::from_utf8(&input[2..final_offset])
+                .ok()
+                .and_then(|parameters| parameters.split([';', ':']).next())
+                .and_then(|value| value.parse::<u32>().ok());
+            let key = match (final_byte, codepoint) {
+                // Kitty's progressive keyboard protocol maps functional keys into its private
+                // Unicode range. cmux uses these forms after Codex enables enhanced reporting.
+                (b'u', Some(57_377)) => InspectorKey::Toggle, // F2
+                (b'u', Some(57_352)) => InspectorKey::Up,
+                (b'u', Some(57_353)) => InspectorKey::Down,
+                (b'u', Some(57_351)) => InspectorKey::Right,
+                (b'u', Some(57_350)) => InspectorKey::Left,
+                (b'u', Some(13 | 57_345)) => InspectorKey::Enter,
+                (b'u', Some(27 | 57_344)) => InspectorKey::Escape,
+                (b'Q', _) => InspectorKey::Toggle,
+                (b'A', _) => InspectorKey::Up,
+                (b'B', _) => InspectorKey::Down,
+                (b'C', _) => InspectorKey::Right,
+                (b'D', _) => InspectorKey::Left,
                 _ => InspectorKey::Other,
             };
             return (key, final_offset + 1);
@@ -308,7 +325,7 @@ fn agent_panel_layouts(
     let header = match panel.mode {
         AgentPanelMode::Passive => format!("AGENTS {active}/{total} · F2 inspect agents"),
         AgentPanelMode::List => format!(
-            "AGENT INSPECTOR {active}/{} · ↑↓ choose · →/Enter open · ←/Esc close",
+            "AGENT INSPECTOR {active}/{} · ↑↓/jk choose · →/Enter open · ←/Esc close",
             total
         ),
         AgentPanelMode::Detail => {
@@ -1488,8 +1505,8 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi, preview_line,
-        safety_text, status_layouts,
+        AgentPanelMode, AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi,
+        preview_line, safety_text, status_layouts,
     };
     use crate::config::{DisplayConfig, Segment, Theme};
     use crate::state::{LiveProxyStatus, StatusSnapshot};
@@ -1729,13 +1746,35 @@ mod tests {
 
     #[test]
     fn inspector_accepts_common_f2_encodings_without_stealing_ctrl_g() {
-        for f2 in [b"\x1bOQ".as_slice(), b"\x1b[12~", b"\x1b[1;1Q"] {
+        for f2 in [
+            b"\x1bOQ".as_slice(),
+            b"\x1b[12~",
+            b"\x1b[1;1Q",
+            b"\x1b[57377u",
+            b"\x1b[57377;1:1u",
+        ] {
             let mut panel = AgentPanelState::default();
             assert!(panel.handle_input(f2, 2));
         }
         let mut passive = AgentPanelState::default();
         assert!(!passive.handle_input(&[0x07], 2));
         assert!(!passive.handle_input(b"\x1b[103;5u", 2));
+    }
+
+    #[test]
+    fn inspector_navigates_with_kitty_arrows_and_jk_fallbacks() {
+        let mut panel = AgentPanelState::default();
+        assert!(panel.handle_input(b"\x1b[57377u", 3));
+        assert!(panel.handle_input(b"\x1b[57353u", 3));
+        assert_eq!(panel.selected, 1);
+        assert!(panel.handle_input(b"j", 3));
+        assert_eq!(panel.selected, 2);
+        assert!(panel.handle_input(b"\x1b[57352;1:1u", 3));
+        assert_eq!(panel.selected, 1);
+        assert!(panel.handle_input(b"k", 3));
+        assert_eq!(panel.selected, 0);
+        assert!(panel.handle_input(b"\x1b[57345u", 3));
+        assert_eq!(panel.mode, AgentPanelMode::Detail);
     }
 
     #[test]

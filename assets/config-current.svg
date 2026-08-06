@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Current Codexline visual configuration</title>
+  <desc id="desc">The keyboard-driven Codexline configuration screen with module categories and a live preview anchored below.</desc>
+  <rect width="1200" height="720" rx="18" fill="#29272d"/>
+  <rect x="1" y="1" width="1198" height="718" rx="17" fill="none" stroke="#5b5860"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="36" y="48" fill="#00d7d7" font-size="22" font-weight="700">Codexline Config</text>
+    <text x="252" y="48" fill="#77737d" font-size="18">✓ saved</text>
+
+    <rect x="28" y="72" width="1128" height="44" rx="4" fill="#242228"/>
+    <text x="48" y="101" fill="#aaa6ad" font-size="18">1 Launch</text>
+    <text x="171" y="101" fill="#aaa6ad" font-size="18">2 Preset</text>
+    <rect x="286" y="78" width="135" height="32" rx="3" fill="#00c8d0"/>
+    <text x="304" y="101" fill="#15161a" font-size="18" font-weight="700">3 Modules</text>
+    <text x="448" y="101" fill="#aaa6ad" font-size="18">4 Appearance</text>
+    <text x="626" y="101" fill="#aaa6ad" font-size="18">5 Data</text>
+    <text x="738" y="101" fill="#aaa6ad" font-size="18">6 Review</text>
+
+    <text x="45" y="153" fill="#aaa6ad" font-size="18">· Core</text>
+    <text x="161" y="153" fill="#aaa6ad" font-size="18">· Usage</text>
+    <rect x="272" y="126" width="154" height="38" rx="3" fill="#35323a"/>
+    <text x="286" y="153" fill="#00d7d7" font-size="18" font-weight="700">◆ Workspace</text>
+    <text x="447" y="153" fill="#aaa6ad" font-size="18">· Activity</text>
+    <text x="590" y="153" fill="#aaa6ad" font-size="18">· Runtime</text>
+
+    <text x="48" y="208" fill="#00d7d7" font-size="18" font-weight="700">› [x] Git summary</text>
+    <text x="276" y="208" fill="#b6b1bb" font-size="18">branch and changes</text>
+    <text x="68" y="244" fill="#b6b1bb" font-size="18">[ ] Git working-tree state</text>
+    <text x="68" y="280" fill="#b6b1bb" font-size="18">[x] Git staged file count</text>
+    <text x="68" y="316" fill="#b6b1bb" font-size="18">[x] Git modified file count</text>
+    <text x="68" y="352" fill="#b6b1bb" font-size="18">[x] Git ahead / behind</text>
+    <text x="68" y="388" fill="#b6b1bb" font-size="18">[x] Worktree</text>
+    <text x="276" y="388" fill="#77737d" font-size="18">linked workspace</text>
+    <text x="68" y="424" fill="#b6b1bb" font-size="18">[x] Directory</text>
+    <text x="276" y="424" fill="#77737d" font-size="18">workspace path</text>
+    <text x="68" y="460" fill="#b6b1bb" font-size="18">[ ] Project root</text>
+
+    <line x1="36" y1="504" x2="1164" y2="504" stroke="#5b5860"/>
+    <text x="46" y="536" fill="#ff00d7" font-size="18" font-weight="700">Live preview</text>
+    <text x="190" y="536" fill="#77737d" font-size="17">· Full · 3 rows · 16 modules · Safe sidecar</text>
+
+    <circle cx="53" cy="574" r="7" fill="#a4df00"/>
+    <text x="72" y="581" fill="#a4df00" font-size="20" font-weight="700">Codex</text>
+    <text x="151" y="581" fill="#77737d" font-size="19">│</text>
+    <text x="174" y="581" fill="#00d7ef" font-size="19">gpt-5.6-sol high</text>
+    <text x="376" y="581" fill="#77737d" font-size="19">│</text>
+    <text x="399" y="581" fill="#ffd75f" font-size="19" font-weight="700">ready</text>
+    <text x="472" y="581" fill="#77737d" font-size="19">│ 8s</text>
+
+    <text x="46" y="616" fill="#d7aaff" font-size="19">git:(feat/statusline*) S1 M3 ↑2</text>
+    <text x="424" y="616" fill="#77737d" font-size="19">│</text>
+    <text x="448" y="616" fill="#d7aaff" font-size="19">wt codexline-agent-2 ↗</text>
+    <text x="720" y="616" fill="#77737d" font-size="19">│</text>
+    <text x="744" y="616" fill="#00d7ef" font-size="19">DIR ~/pro/codex-cli-codexline</text>
+
+    <text x="46" y="650" fill="#a4df00" font-size="19" font-weight="700">CTX ▓▓▓░░ 58% 84.0k/200.0k</text>
+    <text x="382" y="650" fill="#77737d" font-size="19">│</text>
+    <text x="407" y="650" fill="#ffd75f" font-size="19">5H 66% · WEEK 35% · +1</text>
+    <text x="682" y="650" fill="#77737d" font-size="19">│</text>
+    <text x="707" y="650" fill="#ff6b7a" font-size="19">workspace · ask</text>
+
+    <text x="42" y="694" fill="#918d96" font-size="16">↑↓ level/move   ←→ current tab   Space toggle   Enter save   Esc cancel</text>
+  </g>
+</svg>

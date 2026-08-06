@@ -1,10 +1,21 @@
 [package]
-name = "codexline"
+name = "codex-cli-codexline"
 version = "0.1.0"
 edition = "2024"
 description = "A fast, cross-platform companion status line for the Codex CLI"
 license = "MIT"
 rust-version = "1.85"
+authors = ["Codexline contributors"]
+readme = "README.md"
+repository = "https://github.com/YongshengWin/codex-cli-codexline"
+homepage = "https://github.com/YongshengWin/codex-cli-codexline"
+documentation = "https://github.com/YongshengWin/codex-cli-codexline#readme"
+keywords = ["codex", "statusline", "terminal", "cli", "tui"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "codexline"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0"

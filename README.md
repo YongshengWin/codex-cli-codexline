@@ -1,285 +1,276 @@
 <p align="center">
-  <img src="assets/hero.svg" alt="Codexline terminal preview" width="100%" />
+  <img src="assets/hero.svg" alt="Codexline running below the Codex CLI" width="100%" />
 </p>
 
-<h1 align="center">Codexline</h1>
+<h1 align="center">codex-cli-codexline</h1>
 
 <p align="center">
-  A fast, configurable, cross-platform companion status line for the official Codex CLI.
+  A fast, attractive, configurable companion HUD for the official Codex CLI.
 </p>
 
 <p align="center">
-  <code>macOS</code>&nbsp;&nbsp;<code>Linux</code>&nbsp;&nbsp;<code>Windows</code>&nbsp;&nbsp;<code>WSL</code>
+  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 > [!IMPORTANT]
-> Codexline is currently an **unreleased M1 prototype**. PTY/ConPTY launch,
-> passthrough fallback, a static responsive status row, preview, doctor, and
-> launch-mode configuration are implemented. Rich modules and the visual
-> configuration screens below remain the approved product direction.
+> This repository is an **alpha**. macOS is locally tested. Linux, Windows 10+
+> and WSL are supported targets covered by CI, but still need broader manual
+> terminal testing. Codexline is an independent community project and is not
+> affiliated with or endorsed by OpenAI.
 
-Codexline keeps the state that matters visible—model, context pressure, active
-work, agents, Git, permissions, and elapsed time—without modifying Codex or
-requiring tmux.
+`codex-cli-codexline` is the repository and package name. The installed command
+is deliberately shorter: `codexline`.
 
-Its quality bar is deliberately higher than the built-in footer: stronger
-visual hierarchy, richer live state, responsive layouts, polished themes, and
-clear degradation when a data source is unavailable. Recoloring the native
-fields is not the product.
+Codexline launches the official Codex CLI inside a PTY/ConPTY and renders its
+own responsive HUD at the bottom of the terminal. It does not patch Codex,
+replace Codex, scrape the TUI, or require tmux.
 
-## Why Codexline?
+## Highlights
 
-| Stay oriented | Stay responsive | Stay compatible |
-| --- | --- | --- |
-| See what Codex is doing without interrupting the session. | Event-driven rendering keeps the terminal relay path fast. | Codexline wraps the official process and falls back safely when an integration is unavailable. |
+- Model, reasoning, run state, active tools and elapsed time
+- Context pressure, token counters, 5-hour and weekly usage limits
+- Git branch, dirty/staged/modified counts, sync state and worktrees
+- Live agents, plans, compactions, permissions and integration health
+- Keyboard-first visual configuration with an anchored live preview
+- 12 built-in themes, transparent palettes, Unicode and ASCII modes
+- Safe degradation to official Codex when the overlay is unavailable
+- No prompts, responses, transcripts or file contents are collected
 
-## What you will see
+Unknown values are hidden instead of being displayed as misleading zeroes.
 
-```text
- Codex gpt-5.6 high │ ⟳ exec 8s │ ctx ▓▓▓░░ 42% │ ↑2 agents │ feat/pty *
+## Screenshots
+
+### Live HUD
+
+<p align="center">
+  <img src="assets/hero.svg" alt="Codexline live HUD interface example" width="100%" />
+</p>
+
+### Visual configuration
+
+<p align="center">
+  <img src="assets/config-current.svg" alt="Codexline visual configuration example" width="100%" />
+</p>
+
+The screenshots are illustrated interface examples. Colors and visible modules
+depend on the selected theme, terminal width and data available from Codex.
+
+## Requirements
+
+Before installing Codexline, install and authenticate the official Codex CLI.
+The `codex` executable must be available on `PATH`. Follow the current
+instructions in the [official Codex repository](https://github.com/openai/codex).
+
+Building from source currently requires:
+
+- Git
+- Rust 1.85 or newer
+- A terminal with interactive TTY support
+
+Prebuilt and signed binaries are planned. The current alpha installs from
+source.
+
+## Install
+
+### macOS
+
+Install Rust if necessary, then build and install Codexline:
+
+```bash
+xcode-select --install
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+git clone https://github.com/YongshengWin/codex-cli-codexline.git
+cd codex-cli-codexline
+cargo install --path . --locked
+codexline doctor
 ```
 
-The layout responds to available width:
+Restart the terminal if `cargo` or `codexline` is not immediately found.
+Cargo normally installs commands into `~/.cargo/bin`.
 
-```text
-# Wide
-Codex gpt-5.6 high │ ⟳ exec 8s │ ctx ▓▓▓░░ 42% │ ↑2 agents │ feat/pty *
+### Linux
 
-# Narrow
-⟳ exec 8s │ ctx 42% │ main*
+Install a compiler toolchain first. Debian and Ubuntu example:
 
-# ASCII / no special glyphs
-gpt-5.6 | RUN 8s | context 42% | main*
+```bash
+sudo apt update
+sudo apt install -y build-essential curl git pkg-config
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+git clone https://github.com/YongshengWin/codex-cli-codexline.git
+cd codex-cli-codexline
+cargo install --path . --locked
+codexline doctor
 ```
 
-| Module | Signal |
+On Fedora, Arch or another distribution, install the equivalent C compiler,
+linker, Git and Rust packages before running `cargo install`.
+
+### Windows 10/11
+
+Install the official Codex CLI, Git, Rustup and the Microsoft C++ Build Tools.
+Then run in PowerShell:
+
+```powershell
+git clone https://github.com/YongshengWin/codex-cli-codexline.git
+Set-Location codex-cli-codexline
+cargo install --path . --locked
+codexline doctor
+```
+
+The installed program is `codexline.exe`, usually under
+`%USERPROFILE%\.cargo\bin`. Native Windows uses ConPTY and Virtual Terminal
+sequences. Windows support is alpha until the terminal recovery and signal
+matrix has been manually verified on more machines.
+
+### WSL
+
+Install Codex and Codexline inside the same WSL distribution. Follow the Linux
+steps above; do not reuse the Windows `.exe` from the Linux shell.
+
+### Install directly after the repository is public
+
+Users who do not need a local clone can run:
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+```
+
+## Configure and run
+
+The normal first-run sequence is:
+
+```bash
+codexline config
+codexline doctor
+codexline
+```
+
+`codexline` starts the official Codex CLI with the companion HUD. Arguments can
+be forwarded explicitly:
+
+```bash
+codexline run -- --help
+codexline run -- resume --last
+```
+
+To run official Codex through Codexline without drawing the HUD:
+
+```bash
+codexline run -- --no-companion
+```
+
+Non-TTY output, `TERM=dumb`, CI, `codex exec`, very small terminals and explicit
+bypass automatically use direct Codex behavior without the overlay.
+
+| Command | Purpose |
 | --- | --- |
-| Model | Active model and reasoning effort |
-| Work | Turn state, active tool, and elapsed time |
-| Context | Context pressure, tokens, and warning thresholds when available |
-| Agents | Active and completed subagents |
-| Plan | Current step and task progress |
-| Git | Branch, dirty state, staged files, and ahead/behind |
-| Safety | Permission mode, sandbox, and degraded integrations |
+| `codexline` | Start interactive Codex with the HUD |
+| `codexline run -- <args>` | Forward arguments to official Codex |
+| `codexline config` | Open visual configuration and live preview |
+| `codexline preview` | Render a simulated HUD without starting Codex |
+| `codexline doctor` | Show paths, Codex discovery, backend and data-source status |
 
-Unknown data is hidden rather than rendered as a misleading zero.
+> [!NOTE]
+> The configuration UI can record the future “keep typing `codex`” shim mode,
+> but this alpha does not install that shim yet. Until `codexline setup` lands,
+> launch interactive sessions with `codexline`.
 
-The primary product direction is an `attached` layout directly below the Codex
-composer. A compatibility-first `bottom` dock remains available, and `auto`
-falls back to it whenever attached positioning is not trustworthy.
+## Configuration UI
 
-```text
-┌─ Codex composer ──────────────────────────────────────────────┐
-│ Implement {feature}                                          │
-└──────────────────────────────────────────────────────────────┘
- Codex gpt-5.6 high │ ⟳ exec 8s │ ctx 42% │ ↑2 agents │ main *
-```
+Run `codexline config`. Changes remain staged until saved.
 
-## Try the prototype
+| Key | Action |
+| --- | --- |
+| `Tab` / `Shift+Tab` | Change the primary section |
+| `↑` / `↓` | Move between navigation levels or options |
+| `←` / `→` | Change the active tab at the current level |
+| `Space` | Toggle or select an option |
+| `Enter` | Validate and save from anywhere |
+| `Esc` | Cancel without saving |
 
-The project currently builds with Rust 1.85 or newer:
-
-```bash
-cargo build
-cargo run -- preview --width 100
-cargo run -- doctor
-cargo run -- run -- --help
-```
-
-Use an explicit binary when Codex is not discoverable on `PATH`:
+For a line-by-line accessible fallback:
 
 ```bash
-CODEXLINE_CODEX_BIN=/absolute/path/to/codex cargo run -- run
+CODEXLINE_CONFIG_LINEAR=1 codexline config
 ```
 
-Non-TTY output, `TERM=dumb`, CI, `codex exec`, small terminals, and
-`--no-companion` automatically run the official Codex without an overlay.
-Codexline is not yet published and does not install a shim in this milestone.
+PowerShell:
 
-## Configure it visually
-
-`codexline config` opens a fixed-viewport, keyboard-first terminal editor. It
-uses one alternate-screen view instead of scrolling prompts: `←/→` changes
-sections, `↑/↓` moves, `Space` or `Enter` selects, and `S` saves. Launch mode,
-presets, modules, appearance, data sources, review, and a live HUD preview all
-share one staged snapshot. Options use the full upper viewport while the live
-HUD preview stays anchored at full width below them, matching the final HUD's
-available width. Set `CODEXLINE_CONFIG_LINEAR=1` for the accessible line-by-line
-fallback.
-
-The Modules section groups signals into **Core**, **Usage**, **Workspace**,
-**Activity**, and **Runtime**. `←/→` switches categories and `↑/↓` moves
-through the selected category; `Tab` returns to the main section navigation.
-The editor exposes both compact summaries and granular real-data fields,
-including context remaining/used/window, individual token counters, separate
-5-hour and weekly limits, Git counts and sync state, agent count, thread ID,
-project root, and independent hooks/app-server health.
-
-The editor has explicit primary-tab, secondary-tab, and option-list focus.
-`↑/↓` moves between those levels, `←/→` changes the currently focused tab row,
-`Space` changes an option, and `Enter` validates and saves from anywhere.
-
-### 1. Guided setup
-
-First choose how Codexline should launch, then select **Full**, **Focus**, or
-**Minimal**, preview the result, and save. The guided flow targets first-time
-setup and terminals as small as `80×24`.
-
-<p align="center">
-  <img src="assets/config-wizard.svg" alt="Codexline guided setup wizard" width="100%" />
-</p>
-
-```text
-Launch ↔ Preset ↔ Modules ↔ Appearance ↔ Data ↔ Review
+```powershell
+$env:CODEXLINE_CONFIG_LINEAR = "1"
+codexline config
 ```
 
-The Launch step offers two explicit modes:
+Configuration paths:
 
-| Mode | Command you type | What Codexline changes |
-| --- | --- | --- |
-| Keep `codex` command (recommended) | `codex` | Records shim mode for the reversible installer; never overwrites the official binary |
-| Use explicit companion command | `codexline` | Records explicit mode; the official command remains directly selected by the shell |
+| System | Default path |
+| --- | --- |
+| macOS / Linux / WSL | `~/.config/codexline/config.toml` |
+| Unix with `XDG_CONFIG_HOME` | `$XDG_CONFIG_HOME/codexline/config.toml` |
+| Windows | Printed by `codexline doctor`; normally `%APPDATA%\codexline\codexline\config\config.toml` |
 
-The editor stages every change until `S` or Review → Save. In shim mode,
-`codex --no-companion` bypasses an installed overlay and launches the official
-binary. All other arguments and the child exit code pass through unchanged.
+## Themes
 
-### 2. Planned advanced controls
+Transparent themes preserve the terminal background:
 
-The fixed-viewport editor currently covers the complete public v2 schema.
-Module reordering, per-width priority, thresholds, scenario simulation, and an
-inline TOML diff are the next advanced controls.
+- Inherit terminal
+- 0x96f Neon
+- Tokyo Night
+- Catppuccin Mocha
+- Dracula
+- Nord
+- Gruvbox
+- Rosé Pine
 
-<p align="center">
-  <img src="assets/config-advanced.svg" alt="Codexline advanced configuration editor" width="100%" />
-</p>
+Codex Dark and Codex Light use fixed backgrounds. Minimal and Mono provide
+reduced styling. Select and preview every theme from **Appearance** in
+`codexline config`.
 
-The editor previews:
+## Live agents
 
-- wide and narrow terminal widths;
-- Unicode, ASCII, monochrome, and reduced-motion modes;
-- normal, warning, and degraded-data scenarios;
-- the exact TOML changes before saving.
+When Codex exposes active subagents, Codexline expands an Agent Inspector below
+the main HUD. The HUD displays a visible `Ctrl+G focus` action:
 
-Implemented commands:
+1. Press `Ctrl+G` to focus the inspector.
+2. Use `↑` and `↓` to select an agent.
+3. Press `Enter` to view its goal and latest available message.
+4. Press `Esc` to go back or close the inspector.
 
-```text
-codexline run -- ...   # run official Codex; arguments pass through unchanged
-codexline config       # fixed-viewport keyboard editor with live preview
-codexline preview      # preview the current static responsive status line
-codexline doctor       # inspect discovery, TTY state, backend, and config path
+Fields unavailable from the current Codex integration are omitted.
+
+## Optional Hooks integration
+
+The bundled `codexline-events` plugin supplies tool, agent, plan, approval and
+compaction events. From a cloned repository:
+
+```bash
+codex plugin marketplace add "$PWD/integrations"
+codex plugin add codexline-events@codexline-local
 ```
 
-The prototype bottom dock supports configurable segment order and visibility in
-`~/.config/codexline/config.toml`:
+PowerShell:
 
-```toml
-[display]
-theme = "tokyo-night" # transparent; "inherit" uses terminal colors
-glyphs = "unicode"
-refresh_hz = 8
-rows = 3
-segments = [
-  "app", "model", "work", "context", "tokens", "rate-limits",
-  "git", "worktree", "tools", "agents",
-  "plan", "compactions", "safety", "elapsed", "cwd", "status"
-]
-separator = " │ "
+```powershell
+codex plugin marketplace add "$PWD\integrations"
+codex plugin add codexline-events@codexline-local
 ```
 
-Available segments are `app`, `model`, `work`, `context`, `tokens`,
-`rate-limits`, `git`, `worktree`,
-`tools`, `agents`, `plan`, `compactions`, `safety`, `elapsed`, `cwd`, and
-`status`. Remove a name to hide it or reorder the array to move it. `inherit`
-maps semantic colors through the terminal palette. `ox96f` uses the high-contrast
-cyan, green, yellow, violet, and red 0x96f palette. Transparent built-ins also
-include `tokyo-night`, `catppuccin-mocha`, `dracula`, `nord`, `gruvbox`, and
-`rose-pine`. Only the explicitly selected `codex-dark` and `codex-light` themes
-paint their own backgrounds.
-`preview` uses clearly labelled simulated state to demonstrate the responsive
-layout.
+Review and trust the commands through `/hooks` in a new Codex session. The
+adapter is inert when Codexline is not running.
 
-When subagents are present, Codexline automatically expands a read-only Agent
-Inspector below the regular HUD. It shows up to three live agent rows without
-capturing normal input. Press the visible `Ctrl+G focus` action, use `↑/↓` to
-select, `Enter` to view the agent goal and latest official app-server message,
-and `Esc` to go back or close the inspector.
+## Data sources
 
-`rate-limits` is populated through a separate, read-only official Codex
-app-server process. It shows the available 5-hour/weekly windows, remaining
-percentage, explicit `reset 2d 5h` countdown, and reset credits. Disable that process without
-affecting Codex or Hooks:
+Codexline combines three bounded sources:
 
-```toml
-[sources]
-app_server = false
-remote_proxy = false
-```
+1. Official Hooks for lifecycle, tools, permissions and agents.
+2. An optional read-only app-server sidecar for usage limits and account state.
+3. Cached local probes for Git, worktrees, directory and elapsed time.
 
-The default is `app_server = true` and `remote_proxy = false`: a separate,
-read-only app-server sidecar supplies account capacity while the official Codex
-TUI remains on its normal transport. A sidecar failure therefore cannot stop the
-interactive session.
-
-`remote_proxy = true` is an explicit experimental option. It routes the TUI
-protocol through a loopback WebSocket proxy so `context`, `tokens`, and agent
-events can follow the same live thread. Startup and handshake failures fall back
-quickly, but a disconnect after the session is established can terminate the
-official TUI; the guided wizard calls out that tradeoff. Version 1 configurations
-are automatically migrated to version 2 with the proxy disabled. Codexline does
-not read private transcripts or scrape the terminal.
-
-With the optional local `codexline-events` plugin trusted, the HUD receives
-tool, subagent, plan, approval, and compaction events from official Codex Hooks.
-Without it, those unavailable fields remain hidden and Codexline falls back to
-model, Git, worktree, safety, elapsed time, and directory probes.
-
-Planned commands and extensions:
-
-```text
-codexline setup       # choose launch mode and install integration
-codexline themes      # browse built-in themes
-codexline uninstall   # remove only files created by Codexline
-```
-
-Advanced users will also be able to edit:
-
-```toml
-version = 2
-
-[launch]
-mode = "shim" # shim | explicit
-bypass_flag = "--no-companion"
-
-[display]
-theme = "inherit"
-glyphs = "unicode"
-refresh_hz = 8
-
-[sources]
-app_server = true
-remote_proxy = false # experimental; enable only when live-thread data is worth the risk
-
-[[layout.left]]
-module = "turn"
-priority = 100
-
-[[layout.center]]
-module = "context"
-style = "bar"
-priority = 80
-
-[[layout.right]]
-module = "git"
-priority = 70
-```
-
-The current launcher ignores an invalid configuration and starts Codex with
-safe defaults. Last-known-good hot reload arrives with M2.
+The default `safe sidecar` mode does not put a proxy between the TUI and Codex.
+`remote_proxy = true` is experimental and can terminate the interactive TUI if
+an established proxy connection disconnects. It is disabled by default.
 
 ## How it works
-
-Codexline is a thin terminal companion, not another Codex distribution.
 
 ```mermaid
 flowchart LR
@@ -288,138 +279,76 @@ flowchart LR
     PTY --> Codex["Official Codex CLI"]
     Codex --> PTY
     PTY --> Companion
-    Companion --> Screen["Terminal output + reserved status row"]
-
-    Hooks["Official Hooks"] --> State["Versioned state engine"]
-    App["Optional app-server adapter"] --> State
-    Local["Git / time / terminal probes"] --> State
+    Hooks["Official Hooks"] --> State["Bounded state snapshot"]
+    Sidecar["Optional app-server"] --> State
+    Local["Git and local probes"] --> State
     State --> Companion
+    Companion --> Screen["Codex output + HUD"]
 ```
 
-If the real terminal has 40 rows and the Full preset reserves three lanes,
-Codexline gives Codex a 37-row child PTY/ConPTY and owns the final three rows:
+Codexline reserves HUD rows from the child terminal size, forwards Codex output
+as bytes and keeps rendering work away from the relay path. It disables the
+native Codex footer only for the companion-managed process. An explicit user
+`-c tui.status_line=...` override remains authoritative.
 
-```text
-Real terminal: 120 × 40
-├─ Official Codex child terminal: 120 × 37
-└─ Codexline HUD lanes:              rows 38–40
-```
+## Compatibility and current limits
 
-Codex output is forwarded as bytes. The relay does not wait for Git, JSON,
-configuration, or rendering work.
-For companion-managed interactive sessions, Codexline adds a process-local
-`tui.status_line=[]` override so the native footer does not compete with the HUD.
-An explicit user `-c tui.status_line=...` argument still wins, and bypassed or
-non-interactive sessions remain untouched.
-
-When shim mode is enabled, process resolution is:
-
-```text
-codex (user-level shim) → codexline → PTY/ConPTY → official codex
-```
-
-The installer verifies that the shim precedes the official binary in PATH,
-records every file it creates, and provides a reversible uninstall. Explicit
-mode skips the shim entirely.
-
-### Data sources
-
-1. **Official Hooks** provide stable lifecycle, model, tool, permission, and
-   subagent events.
-2. **app-server** can enhance token, context, plan, and thread state when the
-   current Codex version supports it.
-3. **Local probes** provide cached Git, time, version, and terminal state.
-
-app-server support is optional. Failure falls back to Hooks, then local-only
-state, without preventing Codex from starting.
-
-For local development, add and install the bundled event adapter, then review
-and trust its commands from `/hooks` in a new Codex session:
-
-```text
-codex plugin marketplace add /absolute/path/to/codex-cli-statusline/integrations
-codex plugin add codexline-events@codexline-local
-```
-
-The adapter is inert unless Codex was launched by Codexline; event datagrams are
-loopback-only, session-token authenticated, bounded, and never contain transcript
-contents in Codexline state.
-
-## Compatibility target
-
-| Environment | Display backend | Fallback |
+| Environment | Backend | Current confidence |
 | --- | --- | --- |
-| macOS | POSIX PTY + ANSI | Direct Codex execution |
-| Linux | POSIX PTY + ANSI | Direct Codex execution |
-| Windows 10+ | ConPTY + Virtual Terminal | Direct Codex execution |
-| WSL | Linux PTY backend | Direct Codex execution |
-| tmux / Zellij | Same PTY renderer | ASCII or no overlay |
-| Non-TTY, CI, pipes | Overlay disabled | Original Codex behavior |
+| macOS | POSIX PTY + ANSI | Locally tested |
+| Linux | POSIX PTY + ANSI | CI target; manual matrix pending |
+| Windows 10/11 | ConPTY + Virtual Terminal | CI target; manual matrix pending |
+| WSL | Linux PTY backend | Target; manual matrix pending |
+| Non-TTY / CI / pipes | Direct fallback | Automated tests |
 
-Target terminals include Terminal.app, iTerm2, Windows Terminal, Kitty,
-WezTerm, Alacritty, VS Code, JetBrains, Warp, tmux, and Zellij. Compatibility
-claims will be promoted from *target* to *verified* only after automated and
-manual testing.
+Current alpha limitations:
 
-## Performance budget
+- No signed prebuilt binaries or package-manager formulae yet.
+- `codexline setup`, automatic `codex` shim installation and uninstall are not
+  implemented yet.
+- The stable renderer uses a bottom dock; attached composer placement remains
+  experimental product work.
+- Rich live fields depend on the capabilities exposed by the installed Codex
+  version and optional Hooks integration.
 
-| Path | Target |
-| --- | ---: |
-| Wrapper work before starting Codex | `< 20 ms` typical |
-| Added terminal relay latency | `< 1 ms` |
-| Status render | `< 0.5 ms` typical |
-| Idle CPU without animation | Near zero |
-| Default / maximum redraw rate | `8 / 20 FPS` |
-| Hook execution | `< 5 ms` typical |
-| Per-session memory | `< 20 MiB` target |
+## Privacy and safety
 
-Every queue, protocol frame, subprocess, external module, and log buffer will
-be bounded. Performance changes require before/after measurements.
-
-## Safety and privacy
-
-- No prompt, response, command-output, or transcript collection.
-- No parsing of private Codex SQLite tables or rollout formats.
+- No prompt, response, transcript, command output or file-content collection.
+- No private Codex SQLite or rollout format parsing.
 - No modification of the official Codex installation.
-- Dynamic terminal text is sanitized against control-sequence injection.
-- Local sockets and named pipes are restricted to the current user/session.
-- External modules use argv arrays, timeouts, output caps, and concurrency
-  limits; shell execution is opt-in.
-- Installation and removal are reversible.
+- Dynamic display text is sanitized against terminal control injection.
+- Integration messages are local, bounded and scoped to the current session.
+- Failures before PTY ownership fall back to direct Codex execution.
 
-The invariant is simple: **Codex must remain usable when Codexline fails.**
+## Development and coding agents
 
-## Project status
+Start with these documents:
 
-- [x] Architecture and compatibility design
-- [x] Guided and advanced configuration UX
-- [x] GitHub README visual direction
-- [x] M1 prototype — PTY/ConPTY launch, resize, status row, direct fallback
-- [ ] M1 hardening — signals, terminal-mode fixtures, Windows verification
-- [x] M2 — Codex Hooks plugin and state engine
-- [ ] M3 — app-server enhancement, modules, themes, and live configuration
-- [ ] M4 — signed cross-platform installers, compatibility matrix, and `1.0`
+- [`AGENTS.md`](AGENTS.md): mandatory contributor and coding-agent rules in
+  English, Chinese and Japanese.
+- [`DESIGN.md`](DESIGN.md): architecture, compatibility, security and
+  performance invariants.
+- [`docs/adr`](docs/adr): accepted architectural decisions.
 
-See [DESIGN.md](DESIGN.md) for the implementation specification.
+Required verification:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo build --release
+```
+
+Keep implemented behavior, proposals and platform verification clearly
+separated. Do not patch Codex, scrape terminal text or read private transcripts.
 
 ## Contributing
 
-The repository is preparing for public development. Before changing
-architecture or implementation, read:
-
-- [AGENTS.md](AGENTS.md) — engineering, safety, testing, and GitHub workflow;
-- [DESIGN.md](DESIGN.md) — product architecture and performance budgets.
-
-Please open an issue or design note before changing PTY ownership, public state
-schemas, plugin protocols, updater trust, or public configuration formats.
-
-## Inspiration
-
-The guided configuration and live-preview philosophy is inspired by
-[Claude HUD](https://github.com/jarrodwatts/claude-hud). Codexline uses a
-different process architecture because Codex does not currently expose a
-command-backed custom status-line provider.
+Issues and pull requests are welcome. Open an issue before changing PTY
+ownership, public configuration, plugin protocols, updater trust or state
+schemas. PRs should describe tested platforms, fallback behavior, security
+impact and verification commands.
 
 ## License
 
-Codexline is available under the [MIT License](LICENSE).
+MIT. See [`LICENSE`](LICENSE).

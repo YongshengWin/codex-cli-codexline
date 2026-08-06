@@ -1365,7 +1365,7 @@ mod tests {
             "staged 1",
             "modified 3",
             "sync ↑2 ↓0",
-            "ROOT ~/pro/codex-cli-statusline",
+            "ROOT ~/pro/codex-cli-codexline",
             "agents 2/3",
             "thread thr_showcase",
             "HOOK ✓",
@@ -1379,7 +1379,7 @@ mod tests {
     fn full_layout_keeps_workspace_and_health_context_at_common_widths() {
         let line = preview_line(90, &DisplayConfig::default());
         assert!(line.contains("git:(feat/statusline*)"));
-        assert!(line.contains("DIR ~/pro/codex-cli-statusline"));
+        assert!(line.contains("DIR ~/pro/codex-cli-codexline"));
         assert!(line.contains("H+A ✓"));
     }
 

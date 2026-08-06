@@ -24,6 +24,9 @@ exists in a subdirectory.
 Build **Codexline**, a fast, attractive, configurable, cross-platform companion
 status line for the official Codex CLI.
 
+The repository and package name is `codex-cli-codexline`; the product and
+installed command remain `Codexline` and `codexline`.
+
 Codexline wraps the official Codex process with a PTY on Unix-like systems and
 ConPTY on Windows, reserves terminal space for its renderer, and gathers state
 through supported Codex extension surfaces. It must not become a fork or
@@ -196,6 +199,9 @@ uncertainty.
 
 构建 **Codexline**：一个快速、美观、易配置、跨平台的官方 Codex CLI 伴生状态栏。
 
+仓库名和软件包名为 `codex-cli-codexline`；产品名与安装后的命令名保持为
+`Codexline` 和 `codexline`。
+
 Codexline 在类 Unix 系统上通过 PTY、在 Windows 上通过 ConPTY 包装官方 Codex
 进程，为渲染器保留终端空间，并通过 Codex 支持的扩展接口获取状态。它不得演变成
 Codex 的 fork 或局部重实现。
@@ -345,6 +351,9 @@ CI 使用假的 Codex fixture 和能力检测；真实环境 smoke test 必须�
 
 公式 Codex CLI 向けの高速で美しく、設定しやすいクロスプラットフォーム対応の
 コンパニオンステータスライン **Codexline** を構築します。
+
+リポジトリ名とパッケージ名は `codex-cli-codexline`、製品名とインストール後の
+コマンド名は `Codexline` と `codexline` のままです。
 
 Codexline は Unix 系で PTY、Windows で ConPTY を使って公式 Codex プロセスを
 ラップし、描画用の端末領域を予約し、Codex がサポートする拡張インターフェース

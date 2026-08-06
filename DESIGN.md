@@ -4,7 +4,8 @@ Codexline 是一个跨平台的 Codex CLI 伴生程序。它不替换 Codex、�
 安装目录，也不依赖 Codex TUI 的文本布局。它通过 PTY/ConPTY 启动官方 Codex，
 为子进程保留少一行终端高度，并在真实终端的最后一行绘制状态栏。
 
-本文定义第一版可实现架构。项目暂名 `codexline`。
+本文定义第一版可实现架构。项目正式名称为 `codex-cli-codexline`，面向用户的
+产品名与命令名保持为 `Codexline` / `codexline`。
 
 ## 1. 产品目标
 
@@ -331,7 +332,7 @@ East Asian Width 计算，不能用字符串字节数。
 
 ```text
  ● Codex | gpt-5.6-sol high | exec 8s | 41s
- git:(feat/statusline*) S1 M3 ↑2 | wt:codexline-agent-2 ↗ | codex-cli-statusline
+ git:(feat/statusline*) S1 M3 ↑2 | wt:codexline-agent-2 ↗ | codex-cli-codexline
  ctx ███░░ 42% | ↑2/3 agents | 2/4 plan | workspace · ask
 ```
 

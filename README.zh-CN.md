@@ -1,96 +1,21 @@
-<p align="center">
-  <img src="assets/hero.svg" alt="运行在 Codex CLI 下方的 Codexline" width="100%" />
-</p>
+![Codexline — Codex CLI 伴生状态栏](assets/hero.svg)
 
-<h1 align="center">codex-cli-codexline</h1>
+# Codexline
 
-<p align="center">
-  面向官方 Codex CLI 的快速、美观、可配置伴生 HUD。
-</p>
+面向官方 Codex CLI 的快速、易配置伴生 HUD。不修改 Codex，不破坏终端主题，
+让关键信息始终一眼可见。
 
-<p align="center">
-  <a href="README.md">English</a> · <a href="README.zh-CN.md">简体中文</a>
-</p>
+[English](README.md) · [简体中文](README.zh-CN.md)
 
-> [!IMPORTANT]
-> 当前仓库是 **v0.1 预览版**。macOS 主流程已经在本机测试；Debian 12 x86_64
-> 已使用 Rust 1.85.1 验证测试、PTY、Ctrl+C 和终端恢复。Windows 代码已完成交叉
-> 检查，但 ConPTY 和 WSL 仍需要真实主机测试。自动 `codex` shim 尚未完成，也还
-> 没有签名预编译发行包。Codexline 是独立社区项目，与 OpenAI 不存在隶属或官方
-> 背书关系。详见[兼容性与当前限制](#12-兼容性与当前限制)。
+Codexline 在 PTY/ConPTY 中运行官方 Codex CLI，并在终端底部增加响应式状态区域。
+模型、上下文、额度、Git、worktree、工具、计划和子代理都能集中展示；终端能力或
+数据不足时则自动隐藏或降级，不妨碍 Codex 本身运行。
 
-`codex-cli-codexline` 是仓库名和软件包名，安装后的日常命令保持简洁：`codexline`。
+> 独立社区项目，与 OpenAI 不存在隶属或官方背书关系。
 
-Codexline 在 PTY/ConPTY 中启动官方 Codex CLI，并在终端底部绘制自己的响应式 HUD。
-它不修改、不替换 Codex，不抓取 TUI 文本，也不要求使用 tmux。
+## 1. 快速开始
 
-## 目录
-
-1. [核心能力](#1-核心能力)
-2. [界面截图](#2-界面截图)
-3. [环境要求](#3-环境要求)
-4. [安装](#4-安装)
-5. [配置与启动](#5-配置与启动)
-6. [配置界面](#6-配置界面)
-7. [主题](#7-主题)
-8. [子代理查看](#8-子代理查看)
-9. [可选 Hooks 集成](#9-可选-hooks-集成)
-10. [数据来源](#10-数据来源)
-11. [工作原理](#11-工作原理)
-12. [兼容性与当前限制](#12-兼容性与当前限制)
-13. [隐私与安全](#13-隐私与安全)
-14. [开发者与编码代理](#14-开发者与编码代理)
-15. [参与贡献](#15-参与贡献)
-16. [许可证](#16-许可证)
-
-## 1. 核心能力
-
-- 模型、推理等级、运行状态、当前工具和耗时
-- 上下文压力、Token 计数、5 小时与周额度
-- Git 分支、脏文件、暂存/修改数量、同步状态和 worktree
-- 子代理、计划、压缩、权限和数据源健康状态
-- 键盘优先的可视化配置界面与固定底部实时预览
-- 12 套内置主题、透明配色、Unicode 和 ASCII 模式
-- HUD 不可用时安全降级到官方 Codex
-- 不收集提示词、回复、会话记录和文件内容
-
-未知数据会被隐藏，不会显示成具有误导性的零值。
-
-## 2. 界面截图
-
-### 2.1 实时 HUD
-
-<p align="center">
-  <img src="assets/hero.svg" alt="Codexline 实时 HUD 界面示例" width="100%" />
-</p>
-
-### 2.2 可视化配置
-
-<p align="center">
-  <img src="assets/config-current.svg" alt="Codexline 可视化配置界面示例" width="100%" />
-</p>
-
-以上为界面示意截图。实际颜色和模块数量取决于主题、终端宽度以及 Codex 当前可提供
-的数据。
-
-## 3. 环境要求
-
-安装 Codexline 前，请先安装并登录官方 Codex CLI，确保 `codex` 命令位于 `PATH`。
-最新安装说明请以 [Codex 官方仓库](https://github.com/openai/codex)为准。
-
-安装当前预览版需要：
-
-- Git
-- Rust 1.85 或更高版本
-- 支持交互式 TTY 的终端
-
-预编译和签名二进制将在后续提供。当前预览版从源码安装。
-
-## 4. 安装
-
-### 4.1 macOS
-
-如果已经安装 Rust，直接执行以下命令即可完成安装、配置和启动：
+请先准备官方 `codex` 命令、Git 和 Rust 1.85+。
 
 ```bash
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
@@ -99,130 +24,76 @@ codexline doctor
 codexline
 ```
 
-如果尚未安装 Rust：
+完整首次流程就是：**安装 → 配置 → 检查 → 启动**。Codexline 会安装为独立的
+`codexline` 命令，绝不会覆盖官方 `codex`。
 
-```bash
-xcode-select --install
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-```
-
-然后再执行上面的一键安装命令。Cargo 默认将 `codexline` 安装到
-`~/.cargo/bin`；如果终端暂时找不到命令，请重启终端。
-
-已经下载了源码时，也可以从本地安装：
-
-```bash
-cd /path/to/codex-cli-codexline
-cargo install --path . --locked
-```
-
-### 4.2 Linux
-
-先安装编译工具链。Debian/Ubuntu 示例：
-
-```bash
-sudo apt update
-sudo apt install -y build-essential curl git pkg-config
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-source "$HOME/.cargo/env"
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-codexline doctor
-```
-
-Fedora、Arch 等发行版请先安装对应的 C 编译器、链接器、Git 和 Rust 软件包。
-
-### 4.3 Windows 10/11
-
-先安装官方 Codex CLI、Git、Rustup 和 Microsoft C++ Build Tools，然后在
-PowerShell 中执行：
-
-```powershell
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
-codexline doctor
-```
-
-Windows 上的程序文件是 `codexline.exe`，通常位于
-`%USERPROFILE%\.cargo\bin`。原生 Windows 使用 ConPTY 和 Virtual Terminal。
-在更多机器完成终端恢复与信号测试前，Windows 支持仍处于预览质量等级。
-
-### 4.4 WSL
-
-请在同一个 WSL 发行版内安装 Codex 和 Codexline，并按照上面的 Linux 步骤操作；
-不要在 Linux Shell 中直接复用 Windows 的 `.exe`。
-
-### 4.5 验证、更新与卸载
-
-验证是否安装成功：
-
-```bash
-codexline --version
-codexline doctor
-```
-
-重新安装最新公开提交：
-
-```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
-```
-
-卸载通过 Cargo 安装的软件包：
-
-```bash
-cargo uninstall codex-cli-codexline
-```
-
-## 5. 配置与启动
-
-正常首次使用流程：
-
-```bash
-codexline config
-codexline doctor
-codexline
-```
-
-`codexline` 会启动带伴生 HUD 的官方 Codex CLI。也可以显式传递参数：
-
-```bash
-codexline run -- --help
-codexline run -- resume --last
-```
-
-通过 Codexline 启动官方 Codex、但临时关闭 HUD：
-
-```bash
-codexline run -- --no-companion
-```
-
-非 TTY 输出、`TERM=dumb`、CI、`codex exec`、过小终端和显式旁路会自动使用不带
-HUD 的官方 Codex 行为。
-
-| 命令 | 用途 |
+| 命令 | 功能 |
 | --- | --- |
 | `codexline` | 启动带 HUD 的交互式 Codex |
-| `codexline run -- <参数>` | 将参数转发给官方 Codex |
-| `codexline config` | 打开可视化配置和实时预览 |
-| `codexline preview` | 不启动 Codex，渲染模拟 HUD |
-| `codexline doctor` | 显示路径、Codex 发现、后端和数据源状态 |
+| `codexline config` | 配置模块、布局、主题和数据源 |
+| `codexline doctor` | 检查 Codex 路径、终端后端和集成状态 |
+| `codexline preview` | 不启动 Codex，直接预览 HUD |
+| `codexline run -- <参数>` | 将参数转发给官方 Codex CLI |
+| `codexline run -- --no-companion` | 临时关闭 HUD，运行官方 Codex |
 
-> [!NOTE]
-> v0.1 请在 Launch 页面选择 **Use the explicit `codexline` command**。
-> **Keep the `codex` command** 目前只记录面向未来兼容的偏好，不会替换或安装任何
-> 文件。在 `codexline setup` 完成前，请使用 `codexline` 启动交互会话。
+## 2. 实际效果
 
-## 6. 配置界面
+### 2.1 运行中的 HUD
 
-执行 `codexline config`。保存前，所有修改都只存在于临时配置中。
+![仅包含 Codexline HUD 的终端局部截图](assets/screenshot-hud.png)
+
+### 2.2 键盘配置与固定底部实时预览
+
+![仅包含 Codexline 配置预览的终端局部截图](assets/screenshot-config.png)
+
+以上图片只截取终端内容，不包含 cmux 边框、侧栏、标签或个人工作区信息。背景
+沿用终端主题，行数与字段会根据宽度、主题和 Codex 当前能够提供的数据自动调整。
+
+## 3. Codexline 能展示什么
+
+| 分类 | 可展示信息 |
+| --- | --- |
+| 会话 | 模型、推理等级、运行状态、当前工具、耗时 |
+| 用量 | 上下文压力、输入/缓存/输出 Token、5 小时与周额度、重置时间 |
+| 工作区 | 目录、项目根目录、Git 分支、脏/暂存/修改数量、ahead/behind、worktree |
+| 活动 | 最近工具、计划进度、压缩次数、活动/总子代理数量 |
+| 运行环境 | 沙箱、审批模式、权限和数据源健康状态 |
+
+Codex 暴露子代理活动时，Agent Inspector 会在主 HUD 下展开。按 `Ctrl+G` 聚焦，
+用 `↑`/`↓` 选择代理，再按 `Enter` 查看目标和最近一条可用消息。未知字段会被
+隐藏，不会伪装成具有误导性的零值。
+
+其他关键能力：
+
+- 12 套内置主题、透明配色、Unicode 与 ASCII 模式
+- 根据终端宽度自动截断的一至三行布局
+- 检测原生 Codex footer，并仅在伴生会话内关闭它
+- 管道、CI、`TERM=dumb`、极小终端和显式旁路自动降级
+- 不依赖 tmux，不修改官方 Codex 安装
+- 不收集提示词、回复、会话记录或文件内容
+
+## 4. 配置
+
+执行：
+
+```bash
+codexline config
+```
+
+配置界面会暂存全部改动，并把实时预览固定在屏幕底部。
 
 | 按键 | 功能 |
 | --- | --- |
-| `Tab` / `Shift+Tab` | 切换第一级功能页 |
-| `↑` / `↓` | 在导航层级或配置项之间移动 |
+| `Tab` / `Shift+Tab` | 切换一级功能页 |
+| `↑` / `↓` | 在导航层级和选项之间移动 |
 | `←` / `→` | 切换当前层级的标签页 |
-| `Space` | 勾选或切换配置项 |
+| `Space` | 勾选或取消当前选项 |
 | `Enter` | 在任意位置校验并保存 |
-| `Esc` | 放弃修改并退出 |
+| `Esc` | 不保存并退出 |
+
+主题包括 Inherit Terminal、0x96f Neon、Tokyo Night、Catppuccin Mocha、
+Dracula、Nord、Gruvbox、Rosé Pine、Codex Dark、Codex Light、Minimal 和 Mono。
+透明主题会保留终端原有背景。
 
 需要逐行交互的无障碍兼容模式时：
 
@@ -230,141 +101,130 @@ HUD 的官方 Codex 行为。
 CODEXLINE_CONFIG_LINEAR=1 codexline config
 ```
 
-PowerShell：
+macOS、Linux 和 WSL 的配置默认位于 `~/.config/codexline/config.toml`。
+Windows 请运行 `codexline doctor` 查看解析后的实际路径。
 
-```powershell
-$env:CODEXLINE_CONFIG_LINEAR = "1"
-codexline config
-```
+### 可选实时事件集成
 
-配置文件位置：
-
-| 系统 | 默认路径 |
-| --- | --- |
-| macOS / Linux / WSL | `~/.config/codexline/config.toml` |
-| 设置了 `XDG_CONFIG_HOME` 的 Unix | `$XDG_CONFIG_HOME/codexline/config.toml` |
-| Windows | 以 `codexline doctor` 输出为准；通常为 `%APPDATA%\codexline\codexline\config\config.toml` |
-
-## 7. 主题
-
-以下透明主题会保留终端原有背景：
-
-- Inherit terminal
-- 0x96f Neon
-- Tokyo Night
-- Catppuccin Mocha
-- Dracula
-- Nord
-- Gruvbox
-- Rosé Pine
-
-Codex Dark 和 Codex Light 使用固定背景；Minimal 和 Mono 提供简化样式。进入
-`codexline config` 的 **Appearance** 页面即可切换并实时预览。
-
-## 8. 子代理查看
-
-Codex 提供子代理状态时，Codexline 会在主 HUD 下方展开 Agent Inspector，并显示
-`Ctrl+G focus` 操作提示：
-
-1. 按 `Ctrl+G` 聚焦代理列表。
-2. 使用 `↑`、`↓` 选择代理。
-3. 按 `Enter` 查看目标和最近一条可用消息。
-4. 按 `Esc` 返回或关闭详情。
-
-当前 Codex 集成无法提供的字段会自动隐藏。
-
-## 9. 可选 Hooks 集成
-
-仓库内置的 `codexline-events` 插件可以提供工具、代理、计划、权限和压缩事件。克隆
-仓库后执行：
+仓库内置的 `codexline-events` 集成可以补充工具、子代理、计划、审批和压缩事件。
+在克隆的仓库内执行：
 
 ```bash
 codex plugin marketplace add "$PWD/integrations"
 codex plugin add codexline-events@codexline-local
 ```
 
-PowerShell：
+在新的 Codex 会话中通过 `/hooks` 检查命令。Codexline 未运行时，适配器不会工作。
 
-```powershell
-codex plugin marketplace add "$PWD\integrations"
-codex plugin add codexline-events@codexline-local
+## 5. 分系统安装
+
+### 5.1 macOS
+
+已经安装 Rust 时，直接执行：
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+codexline config
 ```
 
-在新的 Codex 会话中使用 `/hooks` 检查并信任命令。Codexline 未运行时，适配器不会
-执行数据转发。
+尚未安装 Rust 时，先安装 Apple 命令行工具和 Rust：
 
-## 10. 数据来源
+```bash
+xcode-select --install
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+```
 
-Codexline 合并三个有边界的数据来源：
+### 5.2 Linux
 
-1. 官方 Hooks：生命周期、工具、权限和代理事件。
-2. 可选只读 app-server sidecar：额度和账户状态。
-3. 带缓存的本地探针：Git、worktree、目录和会话耗时。
+Debian/Ubuntu 示例：
 
-默认的 `safe sidecar` 不会在 Codex TUI 和服务之间插入代理。
-`remote_proxy = true` 属于实验功能；连接建立后若代理断开，可能终止交互式 TUI，
-因此默认关闭。
+```bash
+sudo apt update
+sudo apt install -y build-essential curl git pkg-config
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+source "$HOME/.cargo/env"
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+```
 
-## 11. 工作原理
+其他发行版请安装等价的编译器、链接器、Git 和 Rust 软件包。
+
+### 5.3 Windows 10/11
+
+先安装 Git、Rustup 和 Microsoft C++ Build Tools，然后在 PowerShell 执行：
+
+```powershell
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+codexline doctor
+codexline config
+```
+
+Cargo 会安装 `codexline.exe`，通常位于 `%USERPROFILE%\.cargo\bin`。原生 Windows
+使用 ConPTY；用于关键工作前，请先阅读下方真实验证状态。
+
+### 5.4 WSL
+
+请在同一个 WSL 发行版内安装 Codex 和 Codexline，并按照 Linux 步骤操作；不要在
+Linux Shell 中直接调用 Windows `.exe`。
+
+### 5.5 本地源码、更新与卸载
+
+```bash
+# 从已克隆的源码安装
+cargo install --path . --locked
+
+# 更新 Git 安装
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+
+# 卸载
+cargo uninstall codex-cli-codexline
+```
+
+## 6. 兼容性与版本状态
+
+当前版本为 `0.1.0`：下表中已验证的路径可以使用，但尚不是包含签名预编译文件和
+包管理器安装源的成熟稳定发行版。
+
+| 环境 | 后端 | 验证情况 |
+| --- | --- | --- |
+| macOS arm64 | POSIX PTY + ANSI | 测试、release 构建、安装和交互式终端使用 |
+| Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 测试、release、PTY、Ctrl+C、恢复和配置 TUI |
+| 其他 Linux | POSIX PTY + ANSI | 共用后端；更多发行版矩阵待补 |
+| Windows 10/11 | ConPTY + VT | Rust 1.85.1 交叉检查通过；真实主机运行测试待补 |
+| WSL | Linux PTY | 共用后端；Windows Terminal 边界测试待补 |
+| 管道 / CI / 非 TTY | 直接降级 | 自动化测试 |
+
+准确测试证据见[平台验证记录](docs/platform-verification.md)。自动安装 `codex` shim
+尚未实现，请使用明确的 `codexline` 命令。丰富实时字段取决于已安装 Codex 版本和
+启用的集成接口。
+
+## 7. 工作原理
 
 ```mermaid
 flowchart LR
-    User["终端输入"] --> Companion["Codexline"]
-    Companion --> PTY["PTY / ConPTY"]
-    PTY --> Codex["官方 Codex CLI"]
-    Codex --> PTY
-    PTY --> Companion
-    Hooks["官方 Hooks"] --> State["有边界的状态快照"]
+    Input["终端输入"] --> CL["Codexline"]
+    CL --> PTY["PTY / ConPTY"]
+    PTY <--> Codex["官方 Codex CLI"]
+    Hooks["Hooks"] --> State["有边界的状态快照"]
     Sidecar["可选 app-server"] --> State
-    Local["Git 与本地探针"] --> State
-    State --> Companion
-    Companion --> Screen["Codex 输出 + HUD"]
+    Local["带缓存的本地探针"] --> State
+    State --> CL
+    CL --> Screen["Codex 输出 + 响应式 HUD"]
 ```
 
-Codexline 从子终端高度中预留 HUD 行，以字节流转发 Codex 输出，并使渲染工作远离
-转发热路径。它只在伴生进程内部关闭 Codex 原生 footer；用户显式传入的
-`-c tui.status_line=...` 配置仍具有最高优先级。
+Codexline 从子终端高度中预留 HUD 行，并让 Codex 字节转发独立于 Git 探针和渲染。
+覆盖层无法安全使用时，会直接运行官方 Codex，保证主功能可用。
 
-## 12. 兼容性与当前限制
+## 8. 开发、Agent 与贡献
 
-| 环境 | 后端 | 当前验证程度 |
-| --- | --- | --- |
-| macOS | POSIX PTY + ANSI | 已在本机测试 |
-| Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 测试、release、PTY、Ctrl+C 和配置 TUI 已验证 |
-| 其他 Linux | POSIX PTY + ANSI | CI 目标；更多发行版待验证 |
-| Windows 10/11 | ConPTY + Virtual Terminal | Rust 1.85.1 交叉检查通过；真实 ConPTY 主机待验证 |
-| WSL | Linux PTY 后端 | 支持目标；真实终端矩阵待补 |
-| 非 TTY / CI / 管道 | 直接降级 | 已有自动化测试 |
+本仓库同时面向人类贡献者和编码 Agent，建议按顺序阅读：
 
-详细命令和证据记录在
-[`docs/platform-verification.md`](docs/platform-verification.md)。
+1. [`AGENTS.md`](AGENTS.md) — 英文、中文、日文三语的强制协作规则。
+2. [`DESIGN.md`](DESIGN.md) — 架构、性能、兼容性和安全不变量。
+3. [`docs/adr`](docs/adr) — 已接受的架构决策。
+4. [`docs/platform-verification.md`](docs/platform-verification.md) — 声明与测试证据。
 
-仍标记为 v0.1 预览版的原因：
-
-- 尚无签名预编译二进制和包管理器安装源。
-- 尚未实现 `codexline setup`、自动 `codex` shim 安装和卸载。
-- Windows ConPTY 和 WSL 尚未在真实主机上运行验证。
-- 稳定渲染方式目前是底部 dock；跟随输入框的 attached 布局仍是实验方向。
-- 丰富实时字段取决于已安装 Codex 版本暴露的能力以及可选 Hooks 集成。
-
-## 13. 隐私与安全
-
-- 不收集提示词、回复、会话记录、命令输出或文件内容。
-- 不解析 Codex 私有 SQLite 或 rollout 格式。
-- 不修改官方 Codex 安装。
-- 动态显示文本会过滤终端控制序列注入。
-- 集成消息仅在本机传递，具有大小边界并限定到当前会话。
-- PTY 接管前发生故障时会直接降级到官方 Codex。
-
-## 14. 开发者与编码代理
-
-开始工作前按顺序阅读：
-
-- [`AGENTS.md`](AGENTS.md)：英文、中文、日文三语的强制贡献规则与代理约束。
-- [`DESIGN.md`](DESIGN.md)：架构、兼容性、安全和性能不变量。
-- [`docs/adr`](docs/adr)：已接受的架构决策。
-
-必须执行的验证命令：
+必须通过：
 
 ```bash
 cargo fmt --all -- --check
@@ -373,14 +233,7 @@ cargo test --workspace --all-features
 cargo build --release
 ```
 
-文档必须明确区分已实现功能、未来设计和真实平台验证。禁止 patch Codex、抓取终端
-文本或读取私有会话记录。
+欢迎提交 Issue 和 Pull Request。修改 PTY 所有权、公开配置、集成协议或更新信任链
+前，请先建立 Issue。
 
-## 15. 参与贡献
-
-欢迎提交 Issue 和 Pull Request。修改 PTY 所有权、公开配置、插件协议、更新信任链
-或状态 schema 前，请先建立 Issue。PR 应说明测试平台、降级行为、安全影响和验证命令。
-
-## 16. 许可证
-
-MIT，详见 [`LICENSE`](LICENSE)。
+本项目采用 MIT 许可证，详见 [`LICENSE`](LICENSE)。

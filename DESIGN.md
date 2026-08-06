@@ -434,15 +434,17 @@ codexline uninstall      完整、可逆地移除插件和 shim
 
 ### 8.1 双层配置流程
 
-`codexline config` 默认进入适合首次使用的五步向导：
+`codexline config` 默认进入固定终端视口的六区键盘编辑器：
 
 ```text
-Launch -> Preset -> Modules -> Theme -> Review -> Save
+Launch <-> Preset <-> Modules <-> Appearance <-> Data <-> Review
 ```
 
-向导必须能在 `80x24` 终端中完整使用，并始终提供当前配置的宽屏、窄屏或 ASCII
-预览。Full、Focus 和 Minimal 是起点而不是锁定模板；用户修改任何单项后，配置状态
-变为 Custom。
+界面使用 alternate screen，不产生滚屏历史；`←/→` 切区、`↑/↓` 移动、Space/Enter
+选择、`S` 保存、Esc 取消。必须能在 `80x24` 终端中完整使用，并始终提供当前配置的
+实时预览。所有改动先写入同一内存快照，保存前不修改磁盘。Full、Focus 和 Minimal
+是起点而不是锁定模板；用户修改任何单项后，配置状态变为 Custom。窗口小于最低
+尺寸时显示 resize 提示；`CODEXLINE_CONFIG_LINEAR=1` 提供 screen reader 和兼容回退。
 
 Launch 步骤必须让用户明确选择启动方式：
 

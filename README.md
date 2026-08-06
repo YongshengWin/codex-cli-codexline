@@ -98,9 +98,12 @@ Codexline is not yet published and does not install a shim in this milestone.
 
 ## Configure it visually
 
-`codexline config` implements the complete six-step guided flow as a safe text
-wizard with presets, module toggles, theme and glyph selection, wide/narrow
-previews, and a final dry run. The advanced three-pane editor remains planned.
+`codexline config` opens a fixed-viewport, keyboard-first terminal editor. It
+uses one alternate-screen view instead of scrolling prompts: `←/→` changes
+sections, `↑/↓` moves, `Space` or `Enter` selects, and `S` saves. Launch mode,
+presets, modules, appearance, data sources, review, and a live HUD preview all
+share one staged snapshot. Set `CODEXLINE_CONFIG_LINEAR=1` for the accessible
+line-by-line fallback.
 
 ### 1. Guided setup
 
@@ -113,25 +116,25 @@ setup and terminals as small as `80×24`.
 </p>
 
 ```text
-Launch → Preset → Modules → Theme → Data sources → Review → Save
+Launch ↔ Preset ↔ Modules ↔ Appearance ↔ Data ↔ Review
 ```
 
 The Launch step offers two explicit modes:
 
 | Mode | Command you type | What Codexline changes |
 | --- | --- | --- |
-| Keep `codex` command (recommended) | `codex` | Installs a reversible user-level PATH shim; never overwrites the official binary |
-| Use explicit companion command | `codexline` | Installs no `codex` shim; the official command remains directly selected by the shell |
+| Keep `codex` command (recommended) | `codex` | Records shim mode for the reversible installer; never overwrites the official binary |
+| Use explicit companion command | `codexline` | Records explicit mode; the official command remains directly selected by the shell |
 
-Before saving, the wizard shows the proposed shim path, resolved official Codex
-binary, PATH precedence, and a dry-run summary. In shim mode,
-`codex --no-companion` bypasses the overlay and launches the official binary.
-All other arguments and the child exit code pass through unchanged.
+The editor stages every change until `S` or Review → Save. In shim mode,
+`codex --no-companion` bypasses an installed overlay and launches the official
+binary. All other arguments and the child exit code pass through unchanged.
 
-### 2. Advanced editor
+### 2. Planned advanced controls
 
-Press `A` from the wizard to edit module order, priority, responsive visibility,
-conditions, thresholds, scenarios, and pending TOML changes.
+The fixed-viewport editor currently covers the complete public v2 schema.
+Module reordering, per-width priority, thresholds, scenario simulation, and an
+inline TOML diff are the next advanced controls.
 
 <p align="center">
   <img src="assets/config-advanced.svg" alt="Codexline advanced configuration editor" width="100%" />
@@ -148,7 +151,7 @@ Implemented commands:
 
 ```text
 codexline run -- ...   # run official Codex; arguments pass through unchanged
-codexline config       # guided launch, preset, modules, theme, preview, review
+codexline config       # fixed-viewport keyboard editor with live preview
 codexline preview      # preview the current static responsive status line
 codexline doctor       # inspect discovery, TTY state, backend, and config path
 ```

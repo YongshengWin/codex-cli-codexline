@@ -1,6 +1,7 @@
 mod app_server;
 mod cli;
 mod config;
+mod config_ui;
 mod events;
 mod native_status;
 mod process;

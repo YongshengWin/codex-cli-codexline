@@ -150,6 +150,14 @@ fn configure() -> Result<i32> {
         anyhow::bail!("interactive configuration requires a terminal");
     }
 
+    if std::env::var_os("CODEXLINE_CONFIG_LINEAR").is_none() {
+        return crate::config_ui::run(Config::load_or_default()?);
+    }
+
+    configure_linear()
+}
+
+fn configure_linear() -> Result<i32> {
     let mut config = Config::load_or_default()?;
     println!("Codexline setup · Launch (1/6)\n");
     println!("  1  Keep the `codex` command (recommended)");

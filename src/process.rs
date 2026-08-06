@@ -145,6 +145,49 @@ struct SynchronizedOutput {
     candidate: Vec<u8>,
 }
 
+#[derive(Debug, Default)]
+struct VisibleOutput {
+    state: EscapeState,
+}
+
+#[derive(Debug, Default)]
+enum EscapeState {
+    #[default]
+    Ground,
+    Escape,
+    Csi,
+    Osc,
+    OscEscape,
+}
+
+impl VisibleOutput {
+    /// Reports printable cells while ignoring terminal setup/query escape sequences.
+    fn observe(&mut self, bytes: &[u8]) -> bool {
+        let mut visible = false;
+        for &byte in bytes {
+            self.state = match self.state {
+                EscapeState::Ground if byte == 0x1b => EscapeState::Escape,
+                EscapeState::Ground => {
+                    visible |= byte >= 0x20 && byte != 0x7f;
+                    EscapeState::Ground
+                }
+                EscapeState::Escape if byte == b'[' => EscapeState::Csi,
+                EscapeState::Escape if byte == b']' => EscapeState::Osc,
+                EscapeState::Escape => EscapeState::Ground,
+                EscapeState::Csi if (0x40..=0x7e).contains(&byte) => EscapeState::Ground,
+                EscapeState::Csi => EscapeState::Csi,
+                EscapeState::Osc if byte == 0x07 => EscapeState::Ground,
+                EscapeState::Osc if byte == 0x1b => EscapeState::OscEscape,
+                EscapeState::Osc => EscapeState::Osc,
+                EscapeState::OscEscape if byte == b'\\' => EscapeState::Ground,
+                EscapeState::OscEscape if byte == 0x1b => EscapeState::OscEscape,
+                EscapeState::OscEscape => EscapeState::Osc,
+            };
+        }
+        visible
+    }
+}
+
 impl SynchronizedOutput {
     const BEGIN: &'static [u8] = b"\x1b[?2026h";
     const END: &'static [u8] = b"\x1b[?2026l";
@@ -175,6 +218,22 @@ impl SynchronizedOutput {
 
     fn active(&self) -> bool {
         self.active
+    }
+}
+
+const STARTUP_HUD_QUIET: Duration = Duration::from_millis(150);
+const STARTUP_HUD_FALLBACK: Duration = Duration::from_millis(800);
+
+fn startup_hud_ready(
+    saw_any_child_output: bool,
+    saw_visible_output: bool,
+    since_start: Duration,
+    since_child_output: Duration,
+) -> bool {
+    if saw_visible_output {
+        since_child_output >= STARTUP_HUD_QUIET
+    } else {
+        !saw_any_child_output && since_start >= STARTUP_HUD_FALLBACK
     }
 }
 
@@ -402,19 +461,25 @@ fn prepare_pty(
             .update_reserved_rows(rows.saturating_sub(reserved_rows), reserved_rows)
             .map_err(after)?;
     }
-    renderer.draw(&mut stdout, columns, rows).map_err(after)?;
     let mut last_size = (columns, rows);
-    let mut last_draw = std::time::Instant::now();
-    let mut last_child_output = std::time::Instant::now();
+    let startup_started = Instant::now();
+    let mut last_draw = startup_started;
+    let mut last_child_output = startup_started;
+    let mut saw_any_child_output = false;
+    let mut saw_visible_output = false;
+    let mut hud_visible = false;
     let frame_interval = Duration::from_millis(1000 / u64::from(display.refresh_hz));
     let mut synchronized_output = SynchronizedOutput::default();
+    let mut visible_output = VisibleOutput::default();
     let mut interrupt_observed = None;
     let mut hud_invalidated = false;
     loop {
         match output_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(Ok(bytes)) => {
                 synchronized_output.observe(&bytes);
+                saw_visible_output |= visible_output.observe(&bytes);
                 last_child_output = std::time::Instant::now();
+                saw_any_child_output = true;
                 stdout
                     .write_all(&bytes)
                     .map_err(|error| after(error.into()))?;
@@ -481,18 +546,26 @@ fn prepare_pty(
                 .update_reserved_rows(last_size.1.saturating_sub(reserved_rows), reserved_rows)
                 .map_err(after)?;
             renderer.invalidate();
-            renderer
-                .draw(&mut stdout, last_size.0, last_size.1)
-                .map_err(after)?;
-            stdout.flush().map_err(|error| after(error.into()))?;
-            last_draw = std::time::Instant::now();
-            hud_invalidated = false;
+            if hud_visible {
+                renderer
+                    .draw(&mut stdout, last_size.0, last_size.1)
+                    .map_err(after)?;
+                stdout.flush().map_err(|error| after(error.into()))?;
+                last_draw = std::time::Instant::now();
+                hud_invalidated = false;
+            }
         }
-        if !shutting_down
-            && !synchronized_output.active()
+        let reveal_hud = !hud_visible
+            && startup_hud_ready(
+                saw_any_child_output,
+                saw_visible_output,
+                startup_started.elapsed(),
+                last_child_output.elapsed(),
+            );
+        let refresh_hud = hud_visible
             && last_draw.elapsed() >= Duration::from_secs(1)
-            && last_child_output.elapsed() >= frame_interval
-        {
+            && last_child_output.elapsed() >= frame_interval;
+        if !shutting_down && !synchronized_output.active() && (reveal_hud || refresh_hud) {
             if hud_invalidated {
                 terminal.prepare_status_draw(&mut stdout).map_err(after)?;
                 renderer.invalidate();
@@ -503,6 +576,12 @@ fn prepare_pty(
             stdout.flush().map_err(|error| after(error.into()))?;
             last_draw = std::time::Instant::now();
             hud_invalidated = false;
+            if reveal_hud {
+                hud_visible = true;
+                if let Some(trace) = &trace {
+                    trace.event("hud_revealed");
+                }
+            }
         }
     }
     let status = child
@@ -583,8 +662,9 @@ pub fn backend_name() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{SynchronizedOutput, validate_candidate};
+    use super::{SynchronizedOutput, VisibleOutput, startup_hud_ready, validate_candidate};
     use std::fs;
+    use std::time::Duration;
     use tempfile::tempdir;
 
     #[test]
@@ -606,5 +686,47 @@ mod tests {
         assert!(observer.active());
         observer.observe(b"ltail");
         assert!(!observer.active());
+    }
+
+    #[test]
+    fn startup_hud_waits_for_a_quiet_child_frame_or_no_output_fallback() {
+        assert!(!startup_hud_ready(
+            true,
+            true,
+            Duration::from_secs(2),
+            Duration::from_millis(149)
+        ));
+        assert!(startup_hud_ready(
+            true,
+            true,
+            Duration::from_millis(200),
+            Duration::from_millis(150)
+        ));
+        assert!(!startup_hud_ready(
+            false,
+            false,
+            Duration::from_millis(799),
+            Duration::from_millis(799)
+        ));
+        assert!(startup_hud_ready(
+            false,
+            false,
+            Duration::from_millis(800),
+            Duration::from_millis(800)
+        ));
+        assert!(!startup_hud_ready(
+            true,
+            false,
+            Duration::from_secs(2),
+            Duration::from_secs(1)
+        ));
+    }
+
+    #[test]
+    fn visible_output_ignores_split_terminal_queries_but_detects_text() {
+        let mut observer = VisibleOutput::default();
+        assert!(!observer.observe(b"\x1b[?2004h\x1b]10;?"));
+        assert!(!observer.observe(b"\x1b\\\x1b[6n"));
+        assert!(observer.observe(b"\x1b[1mOpenAI Codex\x1b[0m"));
     }
 }

@@ -309,6 +309,10 @@ screen、cursor visibility、全屏 reset 和 synchronized update。它不根据
 Codex 清屏或切换 alternate screen 后立即补画。常规状态按事件驱动更新；只有
 spinner、时钟和耗时启用时才使用定时器。
 
+启动时先预留行但不抢在 Codex 前绘制。renderer 忽略终端能力查询等纯 ANSI 控制流，
+在观察到首批可见 Codex 内容并安静 150 ms 后一次性揭示 HUD；仅当子进程完全没有
+输出时才在 800 ms 后兜底显示。该门控不得匹配 Codex 文案或依赖界面语言。
+
 ### 7.2 响应式布局
 
 每个 segment 声明：

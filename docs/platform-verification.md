@@ -37,8 +37,8 @@ CI now contains a dedicated MSRV job to prevent recurrence.
 ### Windows 10/11 x64
 
 - GitHub Actions runs the complete workspace on a native `windows-latest` VM.
-- The integration suite opens the system `portable-pty` backend, starts a real
-  `cmd.exe` child through ConPTY, observes its marker and performs bounded
+- The integration suite opens the system `portable-pty` backend, starts the built
+  `codexline --version` fixture through ConPTY, observes its output and performs bounded
   master/child teardown.
 - Unit and passthrough tests also cover configuration, relay ordering, renderer
   diffing, argument forwarding and owned-shim safety.

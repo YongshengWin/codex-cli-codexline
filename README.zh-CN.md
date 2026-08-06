@@ -279,26 +279,9 @@ Codexline 从子终端高度中预留 HUD 行，并让 Codex 字节转发独立�
 
 ## 8. 开发与贡献
 
-开始贡献前，建议按顺序阅读：
+欢迎提交 Issue 和 Pull Request。开发流程与检查项见
+[`CONTRIBUTING.md`](CONTRIBUTING.md)，编码 Agent 的仓库约定见
+[`AGENTS.md`](AGENTS.md)。
 
-1. [`AGENTS.md`](AGENTS.md) — 英文、中文、日文三语的仓库协作约定。
-2. [`DESIGN.md`](DESIGN.md) — 架构、性能、兼容性和安全不变量。
-3. [`docs/adr`](docs/adr) — 已接受的架构决策。
-4. [`docs/platform-verification.md`](docs/platform-verification.md) — 声明与测试证据。
-
-必须通过：
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-cargo build --release
-```
-
-欢迎提交 Issue 和 Pull Request。修改 PTY 所有权、公开配置、集成协议或更新信任链
-前，请先建立 Issue。
-
-本项目采用 MIT 许可证，详见 [`LICENSE`](LICENSE)。
-
-版本记录见 [`CHANGELOG.md`](CHANGELOG.md)，漏洞私密报告方式见
-[`SECURITY.md`](SECURITY.md)。
+本项目采用 [MIT 许可证](LICENSE)。版本记录见 [`CHANGELOG.md`](CHANGELOG.md)，
+漏洞私密报告方式见 [`SECURITY.md`](SECURITY.md)。

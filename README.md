@@ -301,26 +301,9 @@ used safely, Codex remains available through direct execution.
 
 ## 8. Development and contribution
 
-Before contributing, start with:
+Issues and pull requests are welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md)
+for the development workflow and checks, and [`AGENTS.md`](AGENTS.md) for
+coding-agent conventions.
 
-1. [`AGENTS.md`](AGENTS.md) — repository conventions in English, Chinese and Japanese.
-2. [`DESIGN.md`](DESIGN.md) — architecture, performance, compatibility and safety invariants.
-3. [`docs/adr`](docs/adr) — accepted architecture decisions.
-4. [`docs/platform-verification.md`](docs/platform-verification.md) — claims and test evidence.
-
-Required checks:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-cargo build --release
-```
-
-Issues and pull requests are welcome. Open an issue before changing PTY
-ownership, public configuration, integration protocols or updater trust.
-
-MIT licensed. See [`LICENSE`](LICENSE).
-
-Release history is in [`CHANGELOG.md`](CHANGELOG.md); private vulnerability
-reporting guidance is in [`SECURITY.md`](SECURITY.md).
+Licensed under [MIT](LICENSE). See [`CHANGELOG.md`](CHANGELOG.md) for release
+history and [`SECURITY.md`](SECURITY.md) for private vulnerability reporting.

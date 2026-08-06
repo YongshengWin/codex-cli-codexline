@@ -278,7 +278,6 @@ fn draw_small(output: &mut impl Write, columns: u16, rows: u16) -> Result<()> {
 }
 
 fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) -> Result<()> {
-    let split = (columns * 55 / 100).clamp(40, columns.saturating_sub(28));
     queue!(
         output,
         MoveTo(2, 1),
@@ -310,40 +309,28 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
         tab_x += page.title().len() as u16 + 5;
     }
 
-    queue!(
-        output,
-        MoveTo(split, 5),
-        SetForegroundColor(Color::DarkGrey),
-        Print("│"),
-        MoveTo(split + 2, 5),
-        SetForegroundColor(Color::Magenta),
-        SetAttribute(Attribute::Bold),
-        Print("Live preview"),
-        SetAttribute(Attribute::Reset),
-        ResetColor
-    )?;
-    for row in 6..rows.saturating_sub(3) {
-        queue!(
-            output,
-            MoveTo(split, row),
-            SetForegroundColor(Color::DarkGrey),
-            Print("│"),
-            ResetColor
-        )?;
-    }
+    let content_width = columns.saturating_sub(4);
+    let preview = render::preview_ansi(content_width, &editor.config.display)?;
+    let preview_lines = preview.lines().collect::<Vec<_>>();
+    let footer_y = rows - 3;
+    let preview_y = footer_y.saturating_sub(preview_lines.len() as u16);
+    let divider_y = preview_y.saturating_sub(2);
+    let options_y = 6;
 
-    draw_options(output, editor, 2, 6, split.saturating_sub(4), rows - 10)?;
-    draw_preview(
+    draw_options(
         output,
         editor,
-        split + 2,
-        7,
-        columns.saturating_sub(split + 4),
+        2,
+        options_y,
+        content_width,
+        divider_y.saturating_sub(options_y),
     )?;
+    draw_preview_divider(output, editor, 2, divider_y, content_width)?;
+    draw_preview(output, &preview_lines, 2, preview_y)?;
 
     queue!(
         output,
-        MoveTo(2, rows - 3),
+        MoveTo(2, footer_y),
         SetForegroundColor(Color::DarkGrey),
         Print(truncate(
             &editor.message,
@@ -403,38 +390,39 @@ fn draw_options(
     Ok(())
 }
 
-fn draw_preview(
+fn draw_preview(output: &mut impl Write, preview_lines: &[&str], x: u16, y: u16) -> Result<()> {
+    for (offset, line) in preview_lines.iter().enumerate() {
+        queue!(output, MoveTo(x, y + offset as u16), Print(line))?;
+    }
+    Ok(())
+}
+
+fn draw_preview_divider(
     output: &mut impl Write,
     editor: &Editor,
     x: u16,
     y: u16,
     width: u16,
 ) -> Result<()> {
-    if width < 20 {
-        return Ok(());
-    }
-    let preview = render::preview_ansi(width, &editor.config.display)?;
-    let preview_lines = preview.lines().collect::<Vec<_>>();
-    for (offset, line) in preview_lines.iter().enumerate() {
-        queue!(output, MoveTo(x, y + offset as u16), Print(line))?;
-    }
-    let details = [
-        format!("Preset: {}", preset_name(&editor.config)),
-        format!("Rows: {}", editor.config.display.rows),
-        format!("Modules: {} enabled", editor.config.display.segments.len()),
-        format!("Source: {}", source_name(&editor.config.sources)),
-        format!("Launch: {}", editor.config.launch.mode),
-    ];
-    let details_y = y + preview_lines.len() as u16 + 1;
-    for (offset, detail) in details.iter().enumerate() {
-        queue!(
-            output,
-            MoveTo(x, details_y + offset as u16),
-            SetForegroundColor(Color::DarkGrey),
-            Print(truncate(detail, width as usize)),
-            ResetColor
-        )?;
-    }
+    let summary = format!(
+        " Live preview · {} · {} rows · {} modules · {} ",
+        preset_name(&editor.config),
+        editor.config.display.rows,
+        editor.config.display.segments.len(),
+        source_name(&editor.config.sources),
+    );
+    queue!(
+        output,
+        MoveTo(x, y),
+        SetForegroundColor(Color::DarkGrey),
+        Print("─".repeat(width as usize)),
+        MoveTo(x, y),
+        SetForegroundColor(Color::Magenta),
+        SetAttribute(Attribute::Bold),
+        Print(truncate(&summary, width as usize)),
+        SetAttribute(Attribute::Reset),
+        ResetColor
+    )?;
     Ok(())
 }
 

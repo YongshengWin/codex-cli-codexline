@@ -102,8 +102,10 @@ Codexline is not yet published and does not install a shim in this milestone.
 uses one alternate-screen view instead of scrolling prompts: `←/→` changes
 sections, `↑/↓` moves, `Space` or `Enter` selects, and `S` saves. Launch mode,
 presets, modules, appearance, data sources, review, and a live HUD preview all
-share one staged snapshot. Set `CODEXLINE_CONFIG_LINEAR=1` for the accessible
-line-by-line fallback.
+share one staged snapshot. Options use the full upper viewport while the live
+HUD preview stays anchored at full width below them, matching the final HUD's
+available width. Set `CODEXLINE_CONFIG_LINEAR=1` for the accessible line-by-line
+fallback.
 
 ### 1. Guided setup
 

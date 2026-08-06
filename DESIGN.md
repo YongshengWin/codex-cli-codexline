@@ -442,7 +442,9 @@ Launch <-> Preset <-> Modules <-> Appearance <-> Data <-> Review
 
 界面使用 alternate screen，不产生滚屏历史；`←/→` 切区、`↑/↓` 移动、Space/Enter
 选择、`S` 保存、Esc 取消。必须能在 `80x24` 终端中完整使用，并始终提供当前配置的
-实时预览。所有改动先写入同一内存快照，保存前不修改磁盘。Full、Focus 和 Minimal
+实时预览。配置项使用上方整宽区域，实时预览固定在下方整宽区域；两者之间的分隔栏
+显示当前 preset、行数、模块数与数据源，使预览宽度尽量贴近最终 HUD。所有改动先写入
+同一内存快照，保存前不修改磁盘。Full、Focus 和 Minimal
 是起点而不是锁定模板；用户修改任何单项后，配置状态变为 Custom。窗口小于最低
 尺寸时显示 resize 提示；`CODEXLINE_CONFIG_LINEAR=1` 提供 screen reader 和兼容回退。
 

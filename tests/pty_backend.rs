@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -19,7 +19,6 @@ fn native_pty_or_conpty_runs_codexline() {
     let mut command = CommandBuilder::new(env!("CARGO_BIN_EXE_codexline"));
     command.arg("--version");
     let expected = format!("codexline {}", env!("CARGO_PKG_VERSION"));
-    let expected_bytes = expected.as_bytes().to_vec();
     let mut reader = pair
         .master
         .try_clone_reader()
@@ -36,28 +35,34 @@ fn native_pty_or_conpty_runs_codexline() {
     let (output_tx, output_rx) = mpsc::channel();
     let reader_thread = thread::spawn(move || {
         let mut output = Vec::new();
-        let mut buffer = [0_u8; 4096];
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) => break,
-                Ok(count) => {
-                    output.extend_from_slice(&buffer[..count]);
-                    if output
-                        .windows(expected_bytes.len())
-                        .any(|window| window == expected_bytes)
-                    {
-                        break;
-                    }
-                }
-                Err(error) => {
-                    let _ = output_tx.send(Err(error));
-                    return;
-                }
-            }
-        }
-        let _ = output_tx.send(Ok(output));
+        let result = reader.read_to_end(&mut output).map(|_| output);
+        let _ = output_tx.send(result);
     });
 
+    // portable-pty documents that taking and then dropping the writer is required to generate
+    // EOF reliably. A short grace period also avoids losing very short-lived output on macOS.
+    thread::sleep(Duration::from_millis(20));
+    drop(input);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if child
+            .try_wait()
+            .expect("fixture status should be readable")
+            .is_some()
+        {
+            break;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("PTY fixture did not exit within five seconds");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    // ConPTY may retain the final screen data until its master handle closes.
+    drop(pair.master);
     let output = output_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("PTY output reader timed out")
@@ -66,10 +71,4 @@ fn native_pty_or_conpty_runs_codexline() {
     let output = String::from_utf8_lossy(&output);
 
     assert!(output.contains(&expected), "output was {output:?}");
-    // ConPTY's host lifetime is owned by the master handle. Close its input and master before
-    // reaping so the test models Codexline's real teardown order on every supported platform.
-    drop(input);
-    drop(pair.master);
-    let _ = child.kill();
-    child.wait().expect("fixture should be reaped");
 }

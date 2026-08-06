@@ -66,6 +66,8 @@ pub struct StatusRenderer {
     snapshot: Arc<RwLock<StatusSnapshot>>,
     started: Instant,
     agent_panel: Arc<Mutex<AgentPanelState>>,
+    previous_rows: Vec<Vec<u8>>,
+    previous_first_row: Option<u16>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -118,6 +120,8 @@ impl StatusRenderer {
             snapshot,
             started: Instant::now(),
             agent_panel: Arc::new(Mutex::new(AgentPanelState::default())),
+            previous_rows: Vec::new(),
+            previous_first_row: None,
         }
     }
 
@@ -156,13 +160,34 @@ impl StatusRenderer {
         let mut layouts = self.layouts(width);
         layouts.truncate(rows.saturating_sub(4).max(1) as usize);
         let first_row = rows.saturating_sub(layouts.len() as u16).saturating_add(1);
-        write!(output, "\x1b7\x1b[1;{}r", first_row.saturating_sub(1))?;
-        for (offset, layout) in layouts.iter().enumerate() {
+        let rendered = layouts
+            .iter()
+            .map(|layout| {
+                let mut row = Vec::new();
+                write_styled_row(&mut row, layout, width as usize, &self.display, &snapshot)?;
+                Ok(row)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let geometry_changed = self.previous_first_row != Some(first_row)
+            || self.previous_rows.len() != rendered.len();
+        let mut saved_cursor = false;
+        for (offset, row_bytes) in rendered.iter().enumerate() {
+            if !geometry_changed && self.previous_rows.get(offset) == Some(row_bytes) {
+                continue;
+            }
+            if !saved_cursor {
+                write!(output, "\x1b7")?;
+                saved_cursor = true;
+            }
             let row = first_row.saturating_add(offset as u16);
-            write!(output, "\x1b[{row};1H\x1b[2K")?;
-            write_styled_row(output, layout, width as usize, &self.display, &snapshot)?;
+            write!(output, "\x1b[{row};1H")?;
+            output.write_all(row_bytes)?;
         }
-        write!(output, "\x1b[0m\x1b8")?;
+        if saved_cursor {
+            write!(output, "\x1b[0m\x1b8")?;
+        }
+        self.previous_rows = rendered;
+        self.previous_first_row = Some(first_row);
         Ok(())
     }
 }
@@ -875,8 +900,10 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentPanelState, agent_panel_layouts, preview_ansi, preview_line};
+    use super::{AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi, preview_line};
     use crate::config::{DisplayConfig, Theme};
+    use crate::state::StatusSnapshot;
+    use std::sync::{Arc, RwLock};
     use unicode_width::UnicodeWidthStr;
 
     #[test]
@@ -942,5 +969,22 @@ mod tests {
         let detail = agent_panel_layouts(100, &snapshot, panel);
         assert!(detail.iter().any(|row| row[0].1.starts_with("Goal")));
         assert!(detail.iter().any(|row| row[0].1.starts_with("Latest")));
+    }
+
+    #[test]
+    fn renderer_diffs_rows_without_resetting_the_scroll_region() {
+        let snapshot = Arc::new(RwLock::new(StatusSnapshot::showcase()));
+        let mut renderer = StatusRenderer::new(DisplayConfig::default(), snapshot);
+        let mut first = Vec::new();
+        renderer.draw(&mut first, 100, 40).unwrap();
+        let text = String::from_utf8_lossy(&first);
+        assert!(text.match_indices("\x1b[1;").all(|(start, _)| {
+            text[start + 4..].chars().find(char::is_ascii_alphabetic) != Some('r')
+        }));
+        assert!(!first.windows(2).any(|window| window == b"2K"));
+
+        let mut unchanged = Vec::new();
+        renderer.draw(&mut unchanged, 100, 40).unwrap();
+        assert!(unchanged.is_empty());
     }
 }

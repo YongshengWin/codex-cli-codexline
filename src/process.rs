@@ -3,10 +3,11 @@ use std::fs;
 use std::io::{self, IsTerminal, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
@@ -102,6 +103,63 @@ enum PtyOutcome {
     Unavailable(anyhow::Error),
     StartedFailure(anyhow::Error),
 }
+
+/// Tracks only ECMA-48 synchronized-output mode boundaries. Child bytes remain untouched.
+#[derive(Debug, Default)]
+struct SynchronizedOutput {
+    active: bool,
+    candidate: Vec<u8>,
+}
+
+impl SynchronizedOutput {
+    const BEGIN: &'static [u8] = b"\x1b[?2026h";
+    const END: &'static [u8] = b"\x1b[?2026l";
+
+    fn observe(&mut self, bytes: &[u8]) {
+        for &byte in bytes {
+            self.candidate.push(byte);
+            if self.candidate == Self::BEGIN {
+                self.active = true;
+                self.candidate.clear();
+            } else if self.candidate == Self::END {
+                self.active = false;
+                self.candidate.clear();
+            } else if !Self::BEGIN.starts_with(&self.candidate)
+                && !Self::END.starts_with(&self.candidate)
+            {
+                let keep = (1..self.candidate.len())
+                    .rev()
+                    .find(|&start| {
+                        Self::BEGIN.starts_with(&self.candidate[start..])
+                            || Self::END.starts_with(&self.candidate[start..])
+                    })
+                    .unwrap_or(self.candidate.len());
+                self.candidate.drain(..keep);
+            }
+        }
+    }
+
+    fn active(&self) -> bool {
+        self.active
+    }
+}
+
+#[cfg(unix)]
+fn signal_idle_interrupt(process_id: Option<u32>, idle: bool) {
+    if !idle {
+        return;
+    }
+    let Some(process_id) = process_id.and_then(|id| i32::try_from(id).ok()) else {
+        return;
+    };
+    // SAFETY: `process_id` came from the just-spawned child and SIGINT has no pointer arguments.
+    unsafe {
+        libc::kill(process_id, libc::SIGINT);
+    }
+}
+
+#[cfg(not(unix))]
+fn signal_idle_interrupt(_process_id: Option<u32>, _idle: bool) {}
 
 fn launch_direct(executable: &Path, args: &[String], _reason: Option<BypassReason>) -> Result<i32> {
     #[cfg(unix)]
@@ -210,6 +268,9 @@ fn prepare_pty(
 
     let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(after)?));
     let input_writer = Arc::clone(&writer);
+    let interrupted = Arc::new(AtomicBool::new(false));
+    let input_interrupted = Arc::clone(&interrupted);
+    let child_process_id = child.process_id();
     // Detached deliberately: a blocking terminal read cannot be cancelled portably. The
     // operating system tears it down when the short-lived wrapper process exits.
     thread::spawn(move || {
@@ -223,11 +284,21 @@ fn prepare_pty(
             let agent_count = input_snapshot
                 .read()
                 .map_or(0, |snapshot| snapshot.agents.len());
-            let handled = agent_panel.lock().map_or(true, |mut panel| {
-                panel.handle_input(&buffer[..count], agent_count)
-            });
+            let ctrl_c = buffer[..count].contains(&0x03);
+            let idle = input_snapshot
+                .read()
+                .is_ok_and(|snapshot| matches!(snapshot.work.as_deref(), None | Some("ready")));
+            let handled = !ctrl_c
+                && agent_panel.lock().map_or(true, |mut panel| {
+                    panel.handle_input(&buffer[..count], agent_count)
+                });
             if handled {
                 continue;
+            }
+            if ctrl_c {
+                // Stop competing with Codex's graceful shutdown frame immediately.
+                input_interrupted.store(true, Ordering::Release);
+                signal_idle_interrupt(child_process_id, idle);
             }
             let Ok(mut writer) = input_writer.lock() else {
                 break;
@@ -279,13 +350,19 @@ fn prepare_pty(
     let mut last_size = (columns, rows);
     let mut last_draw = std::time::Instant::now();
     let frame_interval = Duration::from_millis(1000 / u64::from(display.refresh_hz));
+    let mut synchronized_output = SynchronizedOutput::default();
+    let mut interrupt_observed = None;
     loop {
         match output_rx.recv_timeout(Duration::from_millis(50)) {
             Ok(Ok(bytes)) => {
+                synchronized_output.observe(&bytes);
                 stdout
                     .write_all(&bytes)
                     .map_err(|error| after(error.into()))?;
-                if last_draw.elapsed() >= frame_interval {
+                if !interrupted.load(Ordering::Acquire)
+                    && !synchronized_output.active()
+                    && last_draw.elapsed() >= frame_interval
+                {
                     renderer
                         .draw(&mut stdout, last_size.0, last_size.1)
                         .map_err(after)?;
@@ -301,7 +378,17 @@ fn prepare_pty(
             Err(RecvTimeoutError::Disconnected) => break,
             Err(RecvTimeoutError::Timeout) => {}
         }
-        if let Ok(size) = crossterm::terminal::size()
+        if interrupted.load(Ordering::Acquire) {
+            let observed = interrupt_observed.get_or_insert_with(Instant::now);
+            if observed.elapsed() >= Duration::from_secs(2) {
+                // Ctrl+C can cancel a turn without exiting Codex. Resume the HUD in that case.
+                interrupted.store(false, Ordering::Release);
+                interrupt_observed = None;
+            }
+        }
+        let shutting_down = interrupted.load(Ordering::Acquire);
+        if !shutting_down
+            && let Ok(size) = crossterm::terminal::size()
             && size != last_size
         {
             last_size = size;
@@ -317,9 +404,13 @@ fn prepare_pty(
                 .update_reserved_rows(size.1.saturating_sub(reserved_rows), reserved_rows)
                 .map_err(after)?;
         }
-        let wanted_rows = renderer
-            .required_rows(last_size.0)
-            .min(last_size.1.saturating_sub(4).max(1));
+        let wanted_rows = if shutting_down {
+            reserved_rows
+        } else {
+            renderer
+                .required_rows(last_size.0)
+                .min(last_size.1.saturating_sub(4).max(1))
+        };
         if wanted_rows != reserved_rows {
             reserved_rows = wanted_rows;
             pair.master
@@ -339,7 +430,10 @@ fn prepare_pty(
             stdout.flush().map_err(|error| after(error.into()))?;
             last_draw = std::time::Instant::now();
         }
-        if last_draw.elapsed() >= Duration::from_secs(1) {
+        if !shutting_down
+            && !synchronized_output.active()
+            && last_draw.elapsed() >= Duration::from_secs(1)
+        {
             renderer
                 .draw(&mut stdout, last_size.0, last_size.1)
                 .map_err(after)?;
@@ -352,6 +446,9 @@ fn prepare_pty(
         .context("failed to wait for Codex")
         .map_err(after)?;
     drop(writer);
+    drop(stdout);
+    // Restore the user's terminal before optional telemetry sidecars are torn down.
+    drop(terminal);
     Ok(status.exit_code() as i32)
 }
 
@@ -416,7 +513,7 @@ pub fn backend_name() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_candidate;
+    use super::{SynchronizedOutput, validate_candidate};
     use std::fs;
     use tempfile::tempdir;
 
@@ -426,5 +523,18 @@ mod tests {
         let candidate = directory.path().join("codex");
         fs::write(&candidate, "fixture").unwrap();
         assert!(validate_candidate(candidate, None).is_err());
+    }
+
+    #[test]
+    fn synchronized_output_observer_handles_split_boundaries() {
+        let mut observer = SynchronizedOutput::default();
+        observer.observe(b"text\x1b[?20");
+        assert!(!observer.active());
+        observer.observe(b"26hframe");
+        assert!(observer.active());
+        observer.observe(b"more\x1b[?2026");
+        assert!(observer.active());
+        observer.observe(b"ltail");
+        assert!(!observer.active());
     }
 }

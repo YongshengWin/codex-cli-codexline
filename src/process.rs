@@ -221,7 +221,7 @@ impl SynchronizedOutput {
     }
 }
 
-const STARTUP_HUD_QUIET: Duration = Duration::from_millis(150);
+const STARTUP_HUD_QUIET: Duration = Duration::from_millis(50);
 const STARTUP_HUD_FALLBACK: Duration = Duration::from_millis(800);
 
 fn startup_hud_ready(
@@ -694,13 +694,13 @@ mod tests {
             true,
             true,
             Duration::from_secs(2),
-            Duration::from_millis(149)
+            Duration::from_millis(49)
         ));
         assert!(startup_hud_ready(
             true,
             true,
             Duration::from_millis(200),
-            Duration::from_millis(150)
+            Duration::from_millis(50)
         ));
         assert!(!startup_hud_ready(
             false,

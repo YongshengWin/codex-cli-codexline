@@ -111,7 +111,14 @@ fn preview(width: Option<u16>) -> Result<i32> {
 fn doctor() -> Result<i32> {
     let config = Config::load_or_default()?;
     println!("Codexline doctor");
+    println!(
+        "  running binary: {}",
+        std::env::current_exe()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|_| "<unknown>".into())
+    );
     println!("  config: {}", config::path()?.display());
+    println!("  theme: {}", theme_label(config.display.theme));
     println!(
         "  stdin/stdout TTY: {}/{}",
         io::stdin().is_terminal(),
@@ -576,6 +583,24 @@ fn theme_number(theme: Theme) -> &'static str {
         Theme::Gruvbox => "11",
         Theme::RosePine => "12",
         Theme::PastelSyntax => "13",
+    }
+}
+
+fn theme_label(theme: Theme) -> &'static str {
+    match theme {
+        Theme::Inherit => "Inherit terminal",
+        Theme::Ox96f => "0x96f Neon",
+        Theme::CodexDark => "Codex Dark",
+        Theme::CodexLight => "Codex Light",
+        Theme::Minimal => "Minimal",
+        Theme::Mono => "Mono",
+        Theme::TokyoNight => "Tokyo Night",
+        Theme::CatppuccinMocha => "Catppuccin Mocha",
+        Theme::Dracula => "Dracula",
+        Theme::Nord => "Nord",
+        Theme::Gruvbox => "Gruvbox",
+        Theme::RosePine => "Rosé Pine",
+        Theme::PastelSyntax => "Pastel Syntax (pink context)",
     }
 }
 

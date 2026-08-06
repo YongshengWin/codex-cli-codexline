@@ -1,4 +1,7 @@
 use std::io::Read;
+use std::sync::mpsc;
+use std::thread;
+use std::time::{Duration, Instant};
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -37,12 +40,48 @@ fn native_pty_or_conpty_runs_a_real_child() {
         .expect("fixture should start inside the PTY");
     drop(pair.slave);
 
-    let mut buffer = [0_u8; 4096];
-    let count = reader
-        .read(&mut buffer)
+    let (output_tx, output_rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut output = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(count) => {
+                    output.extend_from_slice(&buffer[..count]);
+                    if output
+                        .windows(b"CODEXLINE_PTY_OK".len())
+                        .any(|window| window == b"CODEXLINE_PTY_OK")
+                    {
+                        break;
+                    }
+                }
+                Err(error) => {
+                    let _ = output_tx.send(Err(error));
+                    return;
+                }
+            }
+        }
+        let _ = output_tx.send(Ok(output));
+    });
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let status = loop {
+        if let Some(status) = child.try_wait().expect("fixture status should be readable") {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("native PTY fixture did not exit within five seconds");
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+    let output = output_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("PTY output reader timed out")
         .expect("PTY output should be readable");
-    let output = String::from_utf8_lossy(&buffer[..count]);
-    let status = child.wait().expect("fixture should exit");
+    let output = String::from_utf8_lossy(&output);
 
     assert!(status.success());
     assert!(output.contains("CODEXLINE_PTY_OK"), "output was {output:?}");

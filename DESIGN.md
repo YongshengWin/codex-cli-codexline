@@ -457,6 +457,10 @@ Tab/Shift+Tab 返回主步骤导航。分类切换不得改变用户已配置的
 5-hour/weekly limits、reset credits、Git dirty/staged/modified/ahead-behind、project root、
 agent active/total、thread ID，以及 hooks/app-server 的独立健康状态。
 
+配置器维护 Primary tabs、Modules secondary tabs 和 Options 三层显式焦点。`↑/↓` 在层级
+之间进入或返回，并在 Options 内移动；`←/→` 只切换当前获得焦点的 tab 行。Space 只
+修改 Options，Enter 必须从任意层级校验并保存。三个层级的焦点样式必须有明显区别。
+
 Launch 步骤必须让用户明确选择启动方式：
 
 1. **Keep `codex` command（推荐）**：安装用户级、可逆的 PATH shim，用户继续输入

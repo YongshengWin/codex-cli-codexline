@@ -115,6 +115,10 @@ including context remaining/used/window, individual token counters, separate
 5-hour and weekly limits, Git counts and sync state, agent count, thread ID,
 project root, and independent hooks/app-server health.
 
+The editor has explicit primary-tab, secondary-tab, and option-list focus.
+`↑/↓` moves between those levels, `←/→` changes the currently focused tab row,
+`Space` changes an option, and `Enter` validates and saves from anywhere.
+
 ### 1. Guided setup
 
 First choose how Codexline should launch, then select **Full**, **Focus**, or

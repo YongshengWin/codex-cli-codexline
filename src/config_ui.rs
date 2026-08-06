@@ -37,6 +37,13 @@ enum ModuleCategory {
     Runtime,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FocusLevel {
+    Primary,
+    Secondary,
+    Options,
+}
+
 impl ModuleCategory {
     const ALL: [Self; 5] = [
         Self::Core,
@@ -85,6 +92,7 @@ struct Editor {
     config: Config,
     page: Page,
     module_category: ModuleCategory,
+    focus: FocusLevel,
     cursor: usize,
     message: String,
 }
@@ -103,6 +111,7 @@ impl Editor {
             config,
             page: Page::Launch,
             module_category: ModuleCategory::Core,
+            focus: FocusLevel::Primary,
             cursor: 0,
             message: "Changes are staged until you save.".into(),
         }
@@ -131,12 +140,14 @@ impl Editor {
         let last = Page::ALL.len() as isize - 1;
         self.page = Page::ALL[(current + delta).clamp(0, last) as usize];
         self.cursor = 0;
+        self.focus = FocusLevel::Primary;
     }
 
     fn select_page(&mut self, index: usize) {
         if let Some(page) = Page::ALL.get(index) {
             self.page = *page;
             self.cursor = 0;
+            self.focus = FocusLevel::Primary;
         }
     }
 
@@ -155,6 +166,39 @@ impl Editor {
     fn move_cursor(&mut self, delta: isize) {
         let last = self.option_count().saturating_sub(1) as isize;
         self.cursor = (self.cursor as isize + delta).clamp(0, last) as usize;
+    }
+
+    fn navigate_up(&mut self) {
+        match self.focus {
+            FocusLevel::Options if self.cursor > 0 => self.move_cursor(-1),
+            FocusLevel::Options if self.page == Page::Modules => {
+                self.focus = FocusLevel::Secondary;
+            }
+            FocusLevel::Options => self.focus = FocusLevel::Primary,
+            FocusLevel::Secondary => self.focus = FocusLevel::Primary,
+            FocusLevel::Primary => {}
+        }
+    }
+
+    fn navigate_down(&mut self) {
+        match self.focus {
+            FocusLevel::Primary if self.page == Page::Modules => {
+                self.focus = FocusLevel::Secondary;
+            }
+            FocusLevel::Primary => self.focus = FocusLevel::Options,
+            FocusLevel::Secondary => self.focus = FocusLevel::Options,
+            FocusLevel::Options => self.move_cursor(1),
+        }
+    }
+
+    fn navigate_horizontal(&mut self, delta: isize) {
+        match self.focus {
+            FocusLevel::Primary => self.switch_page(delta),
+            FocusLevel::Secondary if self.page == Page::Modules => {
+                self.switch_module_category(delta);
+            }
+            FocusLevel::Secondary | FocusLevel::Options => {}
+        }
     }
 
     fn activate(&mut self) -> Result<Outcome> {
@@ -213,21 +257,23 @@ impl Editor {
             return Ok(Outcome::Cancel);
         }
         match key.code {
-            KeyCode::Left if self.page == Page::Modules => self.switch_module_category(-1),
-            KeyCode::Right if self.page == Page::Modules => self.switch_module_category(1),
-            KeyCode::Left | KeyCode::BackTab => self.switch_page(-1),
-            KeyCode::Right | KeyCode::Tab => self.switch_page(1),
-            KeyCode::Up | KeyCode::Char('k') => self.move_cursor(-1),
-            KeyCode::Down | KeyCode::Char('j') => self.move_cursor(1),
-            KeyCode::Home => self.cursor = 0,
-            KeyCode::End => self.cursor = self.option_count().saturating_sub(1),
+            KeyCode::Left => self.navigate_horizontal(-1),
+            KeyCode::Right => self.navigate_horizontal(1),
+            KeyCode::BackTab => self.switch_page(-1),
+            KeyCode::Tab => self.switch_page(1),
+            KeyCode::Up | KeyCode::Char('k') => self.navigate_up(),
+            KeyCode::Down | KeyCode::Char('j') => self.navigate_down(),
+            KeyCode::Home if self.focus == FocusLevel::Options => self.cursor = 0,
+            KeyCode::End if self.focus == FocusLevel::Options => {
+                self.cursor = self.option_count().saturating_sub(1)
+            }
             KeyCode::Char('1'..='6') => {
                 if let KeyCode::Char(value) = key.code {
                     self.select_page(value.to_digit(10).unwrap_or(1) as usize - 1);
                 }
             }
-            KeyCode::Char(' ') | KeyCode::Enter => return self.activate(),
-            KeyCode::Char('s' | 'S') => {
+            KeyCode::Char(' ') if self.focus == FocusLevel::Options => return self.activate(),
+            KeyCode::Enter | KeyCode::Char('s' | 'S') => {
                 self.config.validate()?;
                 return Ok(Outcome::Save);
             }
@@ -343,12 +389,25 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
     let mut tab_x = 2;
     for (index, page) in Page::ALL.iter().enumerate() {
         let active = *page == editor.page;
+        let focused = active && editor.focus == FocusLevel::Primary;
         queue!(
             output,
             MoveTo(tab_x, 3),
-            SetForegroundColor(if active { Color::Black } else { Color::Grey }),
-            crossterm::style::SetBackgroundColor(if active { Color::Cyan } else { Color::Reset }),
+            SetForegroundColor(if focused {
+                Color::Black
+            } else if active {
+                Color::Cyan
+            } else {
+                Color::Grey
+            }),
+            crossterm::style::SetBackgroundColor(if focused { Color::Cyan } else { Color::Reset }),
+            SetAttribute(if active {
+                Attribute::Bold
+            } else {
+                Attribute::Reset
+            }),
             Print(format!(" {} {} ", index + 1, page.title())),
+            SetAttribute(Attribute::Reset),
             ResetColor
         )?;
         tab_x += page.title().len() as u16 + 5;
@@ -395,9 +454,9 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
         MoveTo(2, rows - 2),
         SetForegroundColor(Color::Grey),
         Print(if editor.page == Page::Modules {
-            "Tab section   ←→ category   ↑↓ move   Space toggle   S save   Esc cancel"
+            "↑↓ level/move   ←→ current tab   Space toggle   Enter save   Esc cancel"
         } else {
-            "←→/Tab section   ↑↓ move   Space/Enter select   S save   Esc cancel"
+            "↑↓ level/move   ←→ current tab   Space select   Enter save   Esc cancel"
         }),
         ResetColor
     )?;
@@ -408,10 +467,18 @@ fn draw_module_categories(output: &mut impl Write, editor: &Editor, x: u16, y: u
     let mut category_x = x;
     for category in ModuleCategory::ALL {
         let active = category == editor.module_category;
+        let focused = active && editor.focus == FocusLevel::Secondary;
         queue!(
             output,
             MoveTo(category_x, y),
-            SetForegroundColor(if active { Color::Cyan } else { Color::DarkGrey }),
+            SetForegroundColor(if focused {
+                Color::Black
+            } else if active {
+                Color::Cyan
+            } else {
+                Color::DarkGrey
+            }),
+            crossterm::style::SetBackgroundColor(if focused { Color::Cyan } else { Color::Reset }),
             SetAttribute(if active {
                 Attribute::Bold
             } else {
@@ -446,7 +513,7 @@ fn draw_options(
         .min(options.len().saturating_sub(visible));
     for (offset, (label, selected)) in options.iter().skip(start).take(visible).enumerate() {
         let index = start + offset;
-        let focused = index == editor.cursor;
+        let focused = editor.focus == FocusLevel::Options && index == editor.cursor;
         let label = if let Some(rest) = label.strip_prefix("( )") {
             format!("({}){rest}", if *selected { "●" } else { " " })
         } else {
@@ -807,7 +874,7 @@ fn truncate(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{Editor, ModuleCategory, Outcome, Page, preset_index, source_index};
+    use super::{Editor, FocusLevel, ModuleCategory, Outcome, Page, preset_index, source_index};
     use crate::config::{Config, Segment};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -821,6 +888,8 @@ mod tests {
         editor.select_page(2);
         assert_eq!(editor.page, Page::Modules);
         assert!(editor.config.display.segments.contains(&Segment::App));
+        editor.handle_key(key(KeyCode::Down)).unwrap();
+        editor.handle_key(key(KeyCode::Down)).unwrap();
         assert_eq!(
             editor.handle_key(key(KeyCode::Char(' '))).unwrap(),
             Outcome::Continue
@@ -834,6 +903,8 @@ mod tests {
         let mut editor = Editor::new(Config::default());
         editor.select_page(2);
 
+        editor.handle_key(key(KeyCode::Down)).unwrap();
+        assert_eq!(editor.focus, FocusLevel::Secondary);
         editor.handle_key(key(KeyCode::Right)).unwrap();
         assert_eq!(editor.page, Page::Modules);
         assert_eq!(editor.module_category, ModuleCategory::Usage);
@@ -841,6 +912,32 @@ mod tests {
 
         editor.handle_key(key(KeyCode::Tab)).unwrap();
         assert_eq!(editor.page, Page::Appearance);
+    }
+
+    #[test]
+    fn arrows_move_between_levels_space_edits_and_enter_saves() {
+        let mut editor = Editor::new(Config::default());
+        editor.select_page(2);
+        assert_eq!(editor.focus, FocusLevel::Primary);
+
+        editor.handle_key(key(KeyCode::Down)).unwrap();
+        assert_eq!(editor.focus, FocusLevel::Secondary);
+        editor.handle_key(key(KeyCode::Down)).unwrap();
+        assert_eq!(editor.focus, FocusLevel::Options);
+
+        assert!(editor.config.display.segments.contains(&Segment::App));
+        editor.handle_key(key(KeyCode::Char(' '))).unwrap();
+        assert!(!editor.config.display.segments.contains(&Segment::App));
+
+        editor.handle_key(key(KeyCode::Up)).unwrap();
+        assert_eq!(editor.focus, FocusLevel::Secondary);
+        editor.handle_key(key(KeyCode::Up)).unwrap();
+        assert_eq!(editor.focus, FocusLevel::Primary);
+
+        assert_eq!(
+            editor.handle_key(key(KeyCode::Enter)).unwrap(),
+            Outcome::Save
+        );
     }
 
     #[test]

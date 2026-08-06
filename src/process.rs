@@ -104,6 +104,42 @@ enum PtyOutcome {
     StartedFailure(anyhow::Error),
 }
 
+#[derive(Clone)]
+struct LifecycleTrace {
+    started: Instant,
+    file: Arc<Mutex<fs::File>>,
+}
+
+impl LifecycleTrace {
+    fn for_current_terminal() -> Option<Self> {
+        let apple_terminal = env::var("TERM_PROGRAM").is_ok_and(|value| value == "Apple_Terminal");
+        let requested = env::var_os("CODEXLINE_TRACE").is_some();
+        if !apple_terminal && !requested {
+            return None;
+        }
+        let path = env::var_os("CODEXLINE_TRACE")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| env::temp_dir().join("codexline-last-exit.log"));
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(path)
+            .ok()?;
+        Some(Self {
+            started: Instant::now(),
+            file: Arc::new(Mutex::new(file)),
+        })
+    }
+
+    fn event(&self, message: impl std::fmt::Display) {
+        if let Ok(mut file) = self.file.lock() {
+            let _ = writeln!(file, "+{}ms {message}", self.started.elapsed().as_millis());
+            let _ = file.flush();
+        }
+    }
+}
+
 /// Tracks only ECMA-48 synchronized-output mode boundaries. Child bytes remain untouched.
 #[derive(Debug, Default)]
 struct SynchronizedOutput {
@@ -191,11 +227,22 @@ fn prepare_pty(
     app_server: bool,
     remote_proxy: bool,
 ) -> std::result::Result<i32, (bool, anyhow::Error)> {
+    let trace = LifecycleTrace::for_current_terminal();
+    if let Some(trace) = &trace {
+        trace.event(format_args!(
+            "start term={} term_program={} remote_proxy={remote_proxy} app_server={app_server}",
+            env::var("TERM").unwrap_or_else(|_| "unset".into()),
+            env::var("TERM_PROGRAM").unwrap_or_else(|_| "unset".into())
+        ));
+    }
     let before = |error| (false, error);
     let after = |error| (true, error);
     let (columns, rows) = crossterm::terminal::size()
         .context("could not read terminal size")
         .map_err(before)?;
+    if let Some(trace) = &trace {
+        trace.event(format_args!("terminal_size columns={columns} rows={rows}"));
+    }
     let mut reserved_rows = u16::from(display.rows);
     let child_rows = rows.saturating_sub(reserved_rows);
     let pair = native_pty_system()
@@ -217,6 +264,9 @@ fn prepare_pty(
     let proxy = remote_proxy
         .then(|| ProtocolProxy::start(executable, Arc::clone(&snapshot)).ok())
         .flatten();
+    if let Some(trace) = &trace {
+        trace.event(format_args!("protocol_proxy active={}", proxy.is_some()));
+    }
     let mut child_args = args.to_vec();
     if let Some(proxy) = &proxy {
         child_args.push("--remote".into());
@@ -237,6 +287,9 @@ fn prepare_pty(
         .spawn_command(command)
         .with_context(|| format!("failed to start {}", executable.display()))
         .map_err(before)?;
+    if let Some(trace) = &trace {
+        trace.event(format_args!("child_spawned pid={:?}", child.process_id()));
+    }
     drop(pair.slave);
 
     // This optional read-only source never sits on the PTY relay path. Failure is silent and
@@ -253,6 +306,7 @@ fn prepare_pty(
     let input_writer = Arc::clone(&writer);
     let interrupted = Arc::new(AtomicBool::new(false));
     let input_interrupted = Arc::clone(&interrupted);
+    let input_trace = trace.clone();
     // Detached deliberately: a blocking terminal read cannot be cancelled portably. The
     // operating system tears it down when the short-lived wrapper process exits.
     thread::spawn(move || {
@@ -260,7 +314,18 @@ fn prepare_pty(
         let mut buffer = [0_u8; 16 * 1024];
         loop {
             let count = match stdin.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
+                Ok(0) => {
+                    if let Some(trace) = &input_trace {
+                        trace.event("stdin_eof");
+                    }
+                    break;
+                }
+                Err(error) => {
+                    if let Some(trace) = &input_trace {
+                        trace.event(format_args!("stdin_error kind={:?}", error.kind()));
+                    }
+                    break;
+                }
                 Ok(count) => count,
             };
             let agent_count = input_snapshot
@@ -277,11 +342,17 @@ fn prepare_pty(
             if ctrl_c {
                 // Stop competing with Codex's graceful shutdown frame immediately.
                 input_interrupted.store(true, Ordering::Release);
+                if let Some(trace) = &input_trace {
+                    trace.event("input_ctrl_c");
+                }
             }
             let Ok(mut writer) = input_writer.lock() else {
                 break;
             };
             if writer.write_all(&buffer[..count]).is_err() || writer.flush().is_err() {
+                if let Some(trace) = &input_trace {
+                    trace.event("pty_input_write_error");
+                }
                 break;
             }
         }
@@ -289,11 +360,17 @@ fn prepare_pty(
 
     let mut reader = pair.master.try_clone_reader().map_err(after)?;
     let (output_tx, output_rx) = mpsc::sync_channel::<io::Result<Vec<u8>>>(8);
+    let output_trace = trace.clone();
     thread::spawn(move || {
         let mut buffer = vec![0_u8; 64 * 1024];
         loop {
             match reader.read(&mut buffer) {
-                Ok(0) => break,
+                Ok(0) => {
+                    if let Some(trace) = &output_trace {
+                        trace.event("pty_output_eof");
+                    }
+                    break;
+                }
                 Ok(count) => {
                     if output_tx.send(Ok(buffer[..count].to_vec())).is_err() {
                         break;
@@ -301,6 +378,9 @@ fn prepare_pty(
                 }
                 Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
                 Err(error) => {
+                    if let Some(trace) = &output_trace {
+                        trace.event(format_args!("pty_output_error kind={:?}", error.kind()));
+                    }
                     let _ = output_tx.send(Err(error));
                     break;
                 }
@@ -346,7 +426,12 @@ fn prepare_pty(
                     anyhow::Error::new(error).context("failed to read child PTY"),
                 ));
             }
-            Err(RecvTimeoutError::Disconnected) => break,
+            Err(RecvTimeoutError::Disconnected) => {
+                if let Some(trace) = &trace {
+                    trace.event("pty_output_channel_disconnected");
+                }
+                break;
+            }
             Err(RecvTimeoutError::Timeout) => {}
         }
         if interrupted.load(Ordering::Acquire) {
@@ -417,10 +502,16 @@ fn prepare_pty(
         .wait()
         .context("failed to wait for Codex")
         .map_err(after)?;
+    if let Some(trace) = &trace {
+        trace.event(format_args!("child_exit code={}", status.exit_code()));
+    }
     drop(writer);
     drop(stdout);
     // Restore the user's terminal before optional telemetry sidecars are torn down.
     drop(terminal);
+    if let Some(trace) = &trace {
+        trace.event("terminal_restored");
+    }
     Ok(status.exit_code() as i32)
 }
 

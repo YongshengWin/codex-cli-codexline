@@ -13,12 +13,13 @@
 </p>
 
 > [!IMPORTANT]
-> This repository is a **v0.1 preview**. The main macOS workflow is usable and
-> locally tested. The conservative preview label means that Linux/Windows/WSL
-> still need broader manual terminal testing, automatic `codex` shim setup is
-> not finished, and signed prebuilt releases are not available yet. Codexline
-> is an independent community project and is not affiliated with or endorsed
-> by OpenAI. See [Compatibility and current limits](#12-compatibility-and-current-limits).
+> This repository is a **v0.1 preview**. The main macOS workflow is locally
+> tested, and Debian 12 x86_64 is verified with Rust 1.85.1, including PTY,
+> Ctrl+C and terminal restoration. Windows code is cross-checked, but ConPTY
+> and WSL still need real-host testing. Automatic `codex` shim setup and signed
+> prebuilt releases are not finished. Codexline is an independent community
+> project and is not affiliated with or endorsed by OpenAI. See
+> [Compatibility and current limits](#12-compatibility-and-current-limits).
 
 `codex-cli-codexline` is the repository and package name. The installed command
 is deliberately shorter: `codexline`.
@@ -342,16 +343,21 @@ native Codex footer only for the companion-managed process. An explicit user
 | Environment | Backend | Current confidence |
 | --- | --- | --- |
 | macOS | POSIX PTY + ANSI | Locally tested |
-| Linux | POSIX PTY + ANSI | CI target; manual matrix pending |
-| Windows 10/11 | ConPTY + Virtual Terminal | CI target; manual matrix pending |
+| Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 tests, release, PTY, Ctrl+C and config TUI verified |
+| Other Linux | POSIX PTY + ANSI | CI target; broader distribution matrix pending |
+| Windows 10/11 | ConPTY + Virtual Terminal | Rust 1.85.1 cross-check passes; real ConPTY host pending |
 | WSL | Linux PTY backend | Target; manual matrix pending |
 | Non-TTY / CI / pipes | Direct fallback | Automated tests |
+
+Detailed commands and evidence are recorded in
+[`docs/platform-verification.md`](docs/platform-verification.md).
 
 Why this is still a v0.1 preview:
 
 - No signed prebuilt binaries or package-manager formulae yet.
 - `codexline setup`, automatic `codex` shim installation and uninstall are not
   implemented yet.
+- Windows ConPTY and WSL have not yet been exercised on real hosts.
 - The stable renderer uses a bottom dock; attached composer placement remains
   experimental product work.
 - Rich live fields depend on the capabilities exposed by the installed Codex

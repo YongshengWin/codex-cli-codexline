@@ -294,18 +294,20 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
             }
         }
         Some("thread/started") => {
-            if let Some(thread) = message.pointer("/params/thread")
-                && thread
+            if let Some(thread) = message.pointer("/params/thread") {
+                if thread
                     .get("parentThreadId")
                     .is_some_and(|value| !value.is_null())
-                && let Some(id) = thread.get("id").and_then(Value::as_str)
-            {
-                let kind = thread
-                    .get("agentRole")
-                    .or_else(|| thread.get("agentNickname"))
-                    .and_then(Value::as_str)
-                    .unwrap_or("agent");
-                upsert_agent(snapshot, id, kind, None);
+                {
+                    if let Some(id) = thread.get("id").and_then(Value::as_str) {
+                        let kind = thread
+                            .get("agentRole")
+                            .or_else(|| thread.get("agentNickname"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("agent");
+                        upsert_agent(snapshot, id, kind, None);
+                    }
+                }
             }
         }
         Some("thread/status/changed") => {
@@ -352,10 +354,10 @@ fn apply_agent_item(item: &Value, thread_id: Option<&str>, snapshot: &mut Status
             }
         }
         Some("agentMessage") => {
-            if let (Some(id), Some(text)) = (thread_id, item.get("text").and_then(Value::as_str))
-                && let Some(agent) = snapshot.agents.iter_mut().find(|agent| agent.id == id)
-            {
-                agent.message = Some(sanitize_agent_text(text));
+            if let (Some(id), Some(text)) = (thread_id, item.get("text").and_then(Value::as_str)) {
+                if let Some(agent) = snapshot.agents.iter_mut().find(|agent| agent.id == id) {
+                    agent.message = Some(sanitize_agent_text(text));
+                }
             }
         }
         _ => {}

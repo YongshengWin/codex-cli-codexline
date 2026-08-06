@@ -109,13 +109,13 @@ fn command_line_override(args: &[String]) -> Option<Detection> {
                 .strip_prefix("--config=")
                 .or_else(|| args[index].strip_prefix("-c="))
         };
-        if let Some(value) = value
-            && let Some(raw) = value.strip_prefix("tui.status_line=")
-        {
-            result = Some(match parse_override(raw) {
-                Ok(enabled) => configured(enabled, "command-line override"),
-                Err(_) => Detection::new(NativeStatusState::Unknown, "command-line override"),
-            });
+        if let Some(value) = value {
+            if let Some(raw) = value.strip_prefix("tui.status_line=") {
+                result = Some(match parse_override(raw) {
+                    Ok(enabled) => configured(enabled, "command-line override"),
+                    Err(_) => Detection::new(NativeStatusState::Unknown, "command-line override"),
+                });
+            }
         }
         index += 1;
     }

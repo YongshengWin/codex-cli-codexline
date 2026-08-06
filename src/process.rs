@@ -64,10 +64,10 @@ pub fn bypass_reason(explicit: bool) -> Option<BypassReason> {
     if env::var_os("CI").is_some() {
         return Some(BypassReason::ContinuousIntegration);
     }
-    if let Ok((columns, rows)) = crossterm::terminal::size()
-        && (columns < 40 || rows < 8)
-    {
-        return Some(BypassReason::TerminalTooSmall);
+    if let Ok((columns, rows)) = crossterm::terminal::size() {
+        if columns < 40 || rows < 8 {
+            return Some(BypassReason::TerminalTooSmall);
+        }
     }
     None
 }
@@ -513,22 +513,23 @@ fn prepare_pty(
             }
         }
         let shutting_down = interrupted.load(Ordering::Acquire);
-        if !shutting_down
-            && let Ok(size) = crossterm::terminal::size()
-            && size != last_size
-        {
-            last_size = size;
-            pair.master
-                .resize(PtySize {
-                    rows: size.1.saturating_sub(reserved_rows),
-                    cols: size.0,
-                    pixel_width: 0,
-                    pixel_height: 0,
-                })
-                .map_err(after)?;
-            terminal
-                .update_reserved_rows(size.1.saturating_sub(reserved_rows), reserved_rows)
-                .map_err(after)?;
+        if !shutting_down {
+            if let Ok(size) = crossterm::terminal::size() {
+                if size != last_size {
+                    last_size = size;
+                    pair.master
+                        .resize(PtySize {
+                            rows: size.1.saturating_sub(reserved_rows),
+                            cols: size.0,
+                            pixel_width: 0,
+                            pixel_height: 0,
+                        })
+                        .map_err(after)?;
+                    terminal
+                        .update_reserved_rows(size.1.saturating_sub(reserved_rows), reserved_rows)
+                        .map_err(after)?;
+                }
+            }
         }
         let wanted_rows = if shutting_down {
             reserved_rows

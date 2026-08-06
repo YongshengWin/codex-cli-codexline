@@ -12,6 +12,14 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  msrv:
+    name: MSRV / Linux 1.85.1
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.1
+      - run: cargo test --workspace --all-features --locked
+
   quality:
     name: Quality / Linux
     runs-on: ubuntu-latest

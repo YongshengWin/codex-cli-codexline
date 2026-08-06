@@ -13,10 +13,11 @@
 </p>
 
 > [!IMPORTANT]
-> 当前仓库是 **v0.1 预览版**。macOS 主流程已经可用并在本机测试。采用保守的预览版
-> 标记，是因为 Linux/Windows/WSL 仍需更广泛的真实终端测试，自动 `codex` shim
-> 尚未完成，也还没有签名预编译发行包。Codexline 是独立社区项目，与 OpenAI 不存在
-> 隶属或官方背书关系。详见[兼容性与当前限制](#12-兼容性与当前限制)。
+> 当前仓库是 **v0.1 预览版**。macOS 主流程已经在本机测试；Debian 12 x86_64
+> 已使用 Rust 1.85.1 验证测试、PTY、Ctrl+C 和终端恢复。Windows 代码已完成交叉
+> 检查，但 ConPTY 和 WSL 仍需要真实主机测试。自动 `codex` shim 尚未完成，也还
+> 没有签名预编译发行包。Codexline 是独立社区项目，与 OpenAI 不存在隶属或官方
+> 背书关系。详见[兼容性与当前限制](#12-兼容性与当前限制)。
 
 `codex-cli-codexline` 是仓库名和软件包名，安装后的日常命令保持简洁：`codexline`。
 
@@ -329,15 +330,20 @@ Codexline 从子终端高度中预留 HUD 行，以字节流转发 Codex 输出�
 | 环境 | 后端 | 当前验证程度 |
 | --- | --- | --- |
 | macOS | POSIX PTY + ANSI | 已在本机测试 |
-| Linux | POSIX PTY + ANSI | CI 目标；真实终端矩阵待补 |
-| Windows 10/11 | ConPTY + Virtual Terminal | CI 目标；真实终端矩阵待补 |
+| Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 测试、release、PTY、Ctrl+C 和配置 TUI 已验证 |
+| 其他 Linux | POSIX PTY + ANSI | CI 目标；更多发行版待验证 |
+| Windows 10/11 | ConPTY + Virtual Terminal | Rust 1.85.1 交叉检查通过；真实 ConPTY 主机待验证 |
 | WSL | Linux PTY 后端 | 支持目标；真实终端矩阵待补 |
 | 非 TTY / CI / 管道 | 直接降级 | 已有自动化测试 |
+
+详细命令和证据记录在
+[`docs/platform-verification.md`](docs/platform-verification.md)。
 
 仍标记为 v0.1 预览版的原因：
 
 - 尚无签名预编译二进制和包管理器安装源。
 - 尚未实现 `codexline setup`、自动 `codex` shim 安装和卸载。
+- Windows ConPTY 和 WSL 尚未在真实主机上运行验证。
 - 稳定渲染方式目前是底部 dock；跟随输入框的 attached 布局仍是实验方向。
 - 丰富实时字段取决于已安装 Codex 版本暴露的能力以及可选 Hooks 集成。
 

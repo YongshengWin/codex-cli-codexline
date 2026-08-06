@@ -112,14 +112,12 @@ struct LifecycleTrace {
 
 impl LifecycleTrace {
     fn for_current_terminal() -> Option<Self> {
-        let apple_terminal = env::var("TERM_PROGRAM").is_ok_and(|value| value == "Apple_Terminal");
-        let requested = env::var_os("CODEXLINE_TRACE").is_some();
-        if !apple_terminal && !requested {
-            return None;
-        }
-        let path = env::var_os("CODEXLINE_TRACE")
-            .map(PathBuf::from)
-            .unwrap_or_else(|| env::temp_dir().join("codexline-last-exit.log"));
+        let requested = env::var_os("CODEXLINE_TRACE")?;
+        let path = if requested == "1" {
+            env::temp_dir().join("codexline-last-exit.log")
+        } else {
+            PathBuf::from(requested)
+        };
         let file = fs::OpenOptions::new()
             .create(true)
             .truncate(true)

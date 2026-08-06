@@ -19,7 +19,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            version: 1,
+            version: 2,
             launch: LaunchConfig::default(),
             sources: SourcesConfig::default(),
             display: DisplayConfig::default(),
@@ -40,7 +40,7 @@ impl Default for SourcesConfig {
     fn default() -> Self {
         Self {
             app_server: true,
-            remote_proxy: true,
+            remote_proxy: false,
         }
     }
 }
@@ -168,15 +168,36 @@ impl Config {
         }
         let source = fs::read_to_string(&path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        let config: Self = toml::from_str(&source)
+        let mut config: Self = toml::from_str(&source)
             .with_context(|| format!("invalid configuration in {}", path.display()))?;
+        let migrated = config.migrate()?;
         config.validate()?;
+        if migrated {
+            // Migration must never prevent Codex from starting. Persist it when possible so
+            // subsequent launches and manual inspection both see the safe v2 source policy.
+            let _ = config.save_atomic();
+        }
         Ok(config)
+    }
+
+    fn migrate(&mut self) -> Result<bool> {
+        match self.version {
+            1 => {
+                // v1 shipped the experimental WebSocket proxy as the default. A proxy
+                // disconnect terminates the official TUI, so existing users migrate to the
+                // read-only sidecar unless they explicitly opt back in using a v2 config.
+                self.version = 2;
+                self.sources.remote_proxy = false;
+                Ok(true)
+            }
+            2 => Ok(false),
+            version => anyhow::bail!("unsupported config version {version}"),
+        }
     }
 
     pub fn validate(&self) -> Result<()> {
         anyhow::ensure!(
-            self.version == 1,
+            self.version == 2,
             "unsupported config version {}",
             self.version
         );
@@ -274,13 +295,28 @@ mod tests {
     fn defaults_are_valid_and_keep_codex() {
         let config = Config::default();
         assert_eq!(config.launch.mode, LaunchMode::Shim);
+        assert!(config.sources.app_server);
+        assert!(!config.sources.remote_proxy);
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn version_one_migrates_away_from_the_experimental_proxy() {
+        let mut config = Config {
+            version: 1,
+            ..Config::default()
+        };
+        config.sources.remote_proxy = true;
+        assert!(config.migrate().unwrap());
+        assert_eq!(config.version, 2);
+        assert!(!config.sources.remote_proxy);
         config.validate().unwrap();
     }
 
     #[test]
     fn rejects_unknown_schema_version() {
         let config = Config {
-            version: 2,
+            version: 3,
             ..Config::default()
         };
         assert!(config.validate().is_err());

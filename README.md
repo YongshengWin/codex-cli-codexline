@@ -98,7 +98,7 @@ Codexline is not yet published and does not install a shim in this milestone.
 
 ## Configure it visually
 
-`codexline config` implements the complete five-step guided flow as a safe text
+`codexline config` implements the complete six-step guided flow as a safe text
 wizard with presets, module toggles, theme and glyph selection, wide/narrow
 previews, and a final dry run. The advanced three-pane editor remains planned.
 
@@ -113,7 +113,7 @@ setup and terminals as small as `80×24`.
 </p>
 
 ```text
-Launch → Preset → Modules → Theme → Review → Save
+Launch → Preset → Modules → Theme → Data sources → Review → Save
 ```
 
 The Launch step offers two explicit modes:
@@ -197,12 +197,18 @@ app_server = false
 remote_proxy = false
 ```
 
-With `remote_proxy = true` (the default), Codexline starts an official loopback
-app-server and transparently routes the TUI protocol through it. `context` and
-`tokens` then consume `thread/tokenUsage/updated` from that same thread. Startup
-or handshake failure falls back within 300 ms to the read-only capacity sidecar,
-Hooks, and local probes. Codexline does not read private transcripts or scrape
-the terminal.
+The default is `app_server = true` and `remote_proxy = false`: a separate,
+read-only app-server sidecar supplies account capacity while the official Codex
+TUI remains on its normal transport. A sidecar failure therefore cannot stop the
+interactive session.
+
+`remote_proxy = true` is an explicit experimental option. It routes the TUI
+protocol through a loopback WebSocket proxy so `context`, `tokens`, and agent
+events can follow the same live thread. Startup and handshake failures fall back
+quickly, but a disconnect after the session is established can terminate the
+official TUI; the guided wizard calls out that tradeoff. Version 1 configurations
+are automatically migrated to version 2 with the proxy disabled. Codexline does
+not read private transcripts or scrape the terminal.
 
 With the optional local `codexline-events` plugin trusted, the HUD receives
 tool, subagent, plan, approval, and compaction events from official Codex Hooks.
@@ -220,7 +226,7 @@ codexline uninstall   # remove only files created by Codexline
 Advanced users will also be able to edit:
 
 ```toml
-version = 1
+version = 2
 
 [launch]
 mode = "shim" # shim | explicit
@@ -231,8 +237,9 @@ theme = "inherit"
 glyphs = "unicode"
 refresh_hz = 8
 
-[telemetry]
-mode = "auto" # auto | hooks | app-server | local-only
+[sources]
+app_server = true
+remote_proxy = false # experimental; enable only when live-thread data is worth the risk
 
 [[layout.left]]
 module = "turn"

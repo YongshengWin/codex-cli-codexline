@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 
-use crate::config::{self, Config, Glyphs, LaunchMode, Segment, Theme};
+use crate::config::{self, Config, Glyphs, LaunchMode, Segment, SourcesConfig, Theme};
 use crate::native_status;
 use crate::process::{self, LaunchRequest};
 use crate::render;
@@ -109,6 +109,7 @@ fn preview(width: Option<u16>) -> Result<i32> {
 }
 
 fn doctor() -> Result<i32> {
+    let config = Config::load_or_default()?;
     println!("Codexline doctor");
     println!("  config: {}", config::path()?.display());
     println!(
@@ -130,6 +131,15 @@ fn doctor() -> Result<i32> {
         println!("  overlay: available");
     }
     println!("  backend: {}", process::backend_name());
+    println!(
+        "  data source: {}",
+        match source_preset_number(&config.sources) {
+            "1" => "safe sidecar (recommended)",
+            "2" => "local only",
+            "3" => "experimental live proxy",
+            _ => unreachable!(),
+        }
+    );
     let native = native_status::detect(&[]);
     println!("  native status line: {} ({})", native.state, native.source);
     Ok(0)
@@ -141,7 +151,7 @@ fn configure() -> Result<i32> {
     }
 
     let mut config = Config::load_or_default()?;
-    println!("Codexline setup · Launch (1/5)\n");
+    println!("Codexline setup · Launch (1/6)\n");
     println!("  1  Keep the `codex` command (recommended)");
     println!("     Reversible user-level shim; official Codex is never overwritten.\n");
     println!("  2  Use the explicit `codexline` command");
@@ -157,7 +167,7 @@ fn configure() -> Result<i32> {
         _ => anyhow::bail!("expected 1 or 2; no changes were saved"),
     };
 
-    println!("\nCodexline setup · Preset (2/5)\n");
+    println!("\nCodexline setup · Preset (2/6)\n");
     println!("  1  Full      Three lanes: session, workspace/worktree, and live activity");
     println!("  2  Focus     Model, work, context, Git, and elapsed");
     println!("  3  Minimal   Work, context, and Git");
@@ -194,7 +204,7 @@ fn configure() -> Result<i32> {
         _ => anyhow::bail!("expected 1, 2, 3, or 4; no changes were saved"),
     };
 
-    println!("\nCodexline setup · Modules (3/5)\n");
+    println!("\nCodexline setup · Modules (3/6)\n");
     print_module_choices(&config.display.segments);
     println!("Toggle modules with numbers separated by spaces; Enter keeps them.");
     let toggles = prompt("Toggle: ")?;
@@ -206,7 +216,7 @@ fn configure() -> Result<i32> {
         "at least one module must remain enabled; no changes were saved"
     );
 
-    println!("\nCodexline setup · Theme (4/5)\n");
+    println!("\nCodexline setup · Theme (4/6)\n");
     println!("  1  Inherit terminal theme (recommended)");
     println!("  2  0x96f Neon (transparent)");
     println!("  3  Codex Dark");
@@ -240,10 +250,28 @@ fn configure() -> Result<i32> {
         _ => anyhow::bail!("expected 1 or 2; no changes were saved"),
     };
 
+    println!("\nCodexline setup · Data sources (5/6)\n");
+    println!("  1  Safe sidecar (recommended)");
+    println!("     Quota plus local probes; a data-source failure cannot stop Codex.\n");
+    println!("  2  Local only");
+    println!("     No app-server process; Git, directory, safety, and elapsed time.\n");
+    println!("  3  Experimental live proxy");
+    println!("     Live thread data, but a WebSocket disconnect can terminate Codex.\n");
+    let source_default = source_preset_number(&config.sources);
+    let source = prompt(&format!("Choose [{source_default}]: "))?;
+    apply_source_preset(
+        &mut config.sources,
+        if source.is_empty() {
+            source_default
+        } else {
+            source.as_str()
+        },
+    )?;
+
     let official = process::discover_codex().ok();
     let shim = config::suggested_shim_path()?;
     let native = native_status::detect(&[]);
-    println!("\nCodexline setup · Review (5/5)\n");
+    println!("\nCodexline setup · Review (6/6)\n");
     println!("Wide preview:");
     println!("{}", render::preview_ansi(88, &config.display)?.trim_end());
     println!("Narrow preview:");
@@ -251,6 +279,15 @@ fn configure() -> Result<i32> {
     println!("\nDry run");
     println!("  mode: {}", config.launch.mode);
     println!("  native status line: {} ({})", native.state, native.source);
+    println!(
+        "  data source: {}",
+        match source_preset_number(&config.sources) {
+            "1" => "safe sidecar",
+            "2" => "local only",
+            "3" => "experimental live proxy",
+            _ => unreachable!(),
+        }
+    );
     println!(
         "  official Codex: {}",
         official
@@ -292,6 +329,35 @@ fn prompt(label: &str) -> Result<String> {
     let mut answer = String::new();
     io::stdin().read_line(&mut answer)?;
     Ok(answer.trim().to_owned())
+}
+
+fn source_preset_number(sources: &SourcesConfig) -> &'static str {
+    if sources.remote_proxy {
+        "3"
+    } else if sources.app_server {
+        "1"
+    } else {
+        "2"
+    }
+}
+
+fn apply_source_preset(sources: &mut SourcesConfig, choice: &str) -> Result<()> {
+    match choice {
+        "1" => {
+            sources.app_server = true;
+            sources.remote_proxy = false;
+        }
+        "2" => {
+            sources.app_server = false;
+            sources.remote_proxy = false;
+        }
+        "3" => {
+            sources.app_server = true;
+            sources.remote_proxy = true;
+        }
+        _ => anyhow::bail!("expected 1, 2, or 3; no changes were saved"),
+    }
+    Ok(())
 }
 
 fn full_segments() -> Vec<Segment> {
@@ -423,8 +489,8 @@ fn theme_number(theme: Theme) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{preset_number, remove_bypass_flag, toggle_segments};
-    use crate::config::Segment;
+    use super::{apply_source_preset, preset_number, remove_bypass_flag, toggle_segments};
+    use crate::config::{Segment, SourcesConfig};
 
     #[test]
     fn removes_only_companion_bypass_flag() {
@@ -440,5 +506,16 @@ mod tests {
         toggle_segments(&mut segments, "4 13").unwrap();
         assert_eq!(segments, [Segment::Work, Segment::Git, Segment::Cwd]);
         assert_eq!(preset_number(&segments), "4");
+    }
+
+    #[test]
+    fn safe_source_preset_never_enables_the_remote_proxy() {
+        let mut sources = SourcesConfig {
+            app_server: true,
+            remote_proxy: true,
+        };
+        apply_source_preset(&mut sources, "1").unwrap();
+        assert!(sources.app_server);
+        assert!(!sources.remote_proxy);
     }
 }

@@ -690,29 +690,41 @@ fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
 }
 
 fn safety_text(snapshot: &StatusSnapshot) -> Option<String> {
+    let full_access = matches!(
+        snapshot.sandbox.as_deref(),
+        Some("danger-full-access" | "dangerFullAccess")
+    );
     let sandbox = snapshot.sandbox.as_deref().map(|value| match value {
         "workspace-write" | "workspaceWrite" => "workspace",
         "read-only" | "readOnly" => "read-only",
         "danger-full-access" | "dangerFullAccess" => "full access",
         other => other,
     });
-    let mode = snapshot
-        .permission_mode
-        .as_deref()
-        .filter(|value| *value != "default")
-        .or_else(|| match snapshot.approvals_reviewer.as_deref() {
-            Some("auto_review" | "autoReview" | "guardian_subagent") => Some("approve for me"),
-            Some("user") | None => snapshot
-                .approval_policy
+    let mode = (!full_access)
+        .then(|| {
+            snapshot
+                .permission_mode
                 .as_deref()
-                .map(|value| match value {
-                    "on-request" | "onRequest" => "ask",
-                    "never" => "never ask",
-                    "untrusted" | "unlessTrusted" => "ask untrusted",
-                    other => other,
-                }),
-            Some(other) => Some(other),
-        });
+                .filter(|value| *value != "default")
+                .or_else(|| match snapshot.approvals_reviewer.as_deref() {
+                    Some("auto_review" | "autoReview" | "guardian_subagent") => {
+                        Some("approve for me")
+                    }
+                    Some("user") | None => {
+                        snapshot
+                            .approval_policy
+                            .as_deref()
+                            .map(|value| match value {
+                                "on-request" | "onRequest" => "ask",
+                                "never" => "never ask",
+                                "untrusted" | "unlessTrusted" => "ask untrusted",
+                                other => other,
+                            })
+                    }
+                    Some(other) => Some(other),
+                })
+        })
+        .flatten();
     let mut parts = [sandbox, mode]
         .into_iter()
         .flatten()
@@ -1384,7 +1396,7 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 mod tests {
     use super::{
         AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi, preview_line,
-        status_layouts,
+        safety_text, status_layouts,
     };
     use crate::config::{DisplayConfig, Segment, Theme};
     use crate::state::StatusSnapshot;
@@ -1458,6 +1470,18 @@ mod tests {
         assert!(text.contains("gpt-start medium · default"));
         assert!(text.contains("workspace · approve for me · default"));
         assert!(text.contains("CTX ░░░░░ 0% used · start"));
+    }
+
+    #[test]
+    fn full_access_suppresses_stale_approval_policy() {
+        let snapshot = StatusSnapshot {
+            sandbox: Some("danger-full-access".into()),
+            approval_policy: Some("on-request".into()),
+            settings_live: true,
+            ..StatusSnapshot::default()
+        };
+
+        assert_eq!(safety_text(&snapshot).as_deref(), Some("full access"));
     }
 
     #[test]

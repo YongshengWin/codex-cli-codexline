@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, Read};
 use std::net::{SocketAddr, UdpSocket};
 use std::str::FromStr;
@@ -8,11 +8,12 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::state::{AgentActivity, StatusSnapshot, ToolCount};
 
-const MAX_HOOK_BYTES: u64 = 60 * 1024;
+const MAX_HOOK_INPUT_BYTES: u64 = 2 * 1024 * 1024;
+const MAX_EVENT_BYTES: usize = 60 * 1024;
 
 pub struct EventServer {
     endpoint: SocketAddr,
@@ -56,27 +57,94 @@ struct Envelope {
 }
 
 pub fn emit_hook() -> Result<i32> {
+    // A status source must never make an official Codex hook fail. Oversized, partial, or
+    // version-skewed events are deliberately dropped and the TUI continues normally.
+    let _ = try_emit_hook();
+    Ok(0)
+}
+
+fn try_emit_hook() -> Result<()> {
     let Some(endpoint) = std::env::var_os("CODEXLINE_EVENT_ENDPOINT") else {
-        return Ok(0);
+        return Ok(());
     };
     let Some(token) = std::env::var_os("CODEXLINE_EVENT_TOKEN") else {
-        return Ok(0);
+        return Ok(());
     };
     let endpoint = SocketAddr::from_str(&endpoint.to_string_lossy())
         .context("invalid CODEXLINE_EVENT_ENDPOINT")?;
     let mut bytes = Vec::new();
     io::stdin()
-        .take(MAX_HOOK_BYTES)
+        .take(MAX_HOOK_INPUT_BYTES)
         .read_to_end(&mut bytes)
         .context("could not read hook input")?;
     let event: Value = serde_json::from_slice(&bytes).context("invalid hook JSON")?;
+    let event = compact_hook_event(&event);
     let message = serde_json::to_vec(&Envelope {
         token: token.to_string_lossy().into_owned(),
         event,
     })?;
     let socket = UdpSocket::bind((std::net::Ipv4Addr::LOCALHOST, 0))?;
     socket.send_to(&message, endpoint)?;
-    Ok(0)
+    Ok(())
+}
+
+fn compact_hook_event(event: &Value) -> Value {
+    const STRING_FIELDS: &[&str] = &[
+        "hook_event_name",
+        "session_id",
+        "model",
+        "reasoning_effort",
+        "model_reasoning_effort",
+        "cwd",
+        "permission_mode",
+        "sandbox_mode",
+        "approval_policy",
+        "approvals_reviewer",
+        "tool_name",
+        "agent_id",
+        "agent_type",
+        "prompt",
+        "last_assistant_message",
+    ];
+    let mut compact = Map::new();
+    for key in STRING_FIELDS {
+        if let Some(value) = event.get(*key).and_then(Value::as_str) {
+            compact.insert(
+                (*key).into(),
+                Value::String(value.chars().take(512).collect()),
+            );
+        }
+    }
+    if let Some(input) = event.get("tool_input") {
+        let mut tool_input = Map::new();
+        if let Some(task_name) = input.get("task_name").and_then(Value::as_str) {
+            tool_input.insert(
+                "task_name".into(),
+                Value::String(task_name.chars().take(80).collect()),
+            );
+        }
+        if let Some(plan) = input.get("plan").and_then(Value::as_array) {
+            tool_input.insert(
+                "plan".into(),
+                Value::Array(
+                    plan.iter()
+                        .take(256)
+                        .filter_map(|step| step.get("status").and_then(Value::as_str))
+                        .map(|status| {
+                            Value::Object(Map::from_iter([(
+                                "status".into(),
+                                Value::String(status.chars().take(32).collect()),
+                            )]))
+                        })
+                        .collect(),
+                ),
+            );
+        }
+        if !tool_input.is_empty() {
+            compact.insert("tool_input".into(), Value::Object(tool_input));
+        }
+    }
+    Value::Object(compact)
 }
 
 #[derive(Default)]
@@ -85,10 +153,11 @@ struct RuntimeState {
     seen_agents: HashSet<String>,
     tools: Vec<ToolCount>,
     compactions: u16,
+    pending_agent_names: VecDeque<String>,
 }
 
 fn listen(socket: UdpSocket, expected_token: String, snapshot: Arc<RwLock<StatusSnapshot>>) {
-    let mut buffer = vec![0_u8; (MAX_HOOK_BYTES as usize) + 4096];
+    let mut buffer = vec![0_u8; MAX_EVENT_BYTES + 4096];
     let mut runtime = RuntimeState::default();
     while let Ok((count, source)) = socket.recv_from(&mut buffer) {
         if !source.ip().is_loopback() {
@@ -160,6 +229,15 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
             if tool == "update_plan" {
                 update_plan(event, snapshot);
             }
+            if is_spawn_agent_tool(tool)
+                && let Some(task_name) = event
+                    .pointer("/tool_input/task_name")
+                    .and_then(Value::as_str)
+            {
+                runtime
+                    .pending_agent_names
+                    .push_back(compact_agent(task_name));
+            }
         }
         "PermissionRequest" => {
             let tool = string(event, "tool_name").unwrap_or("tool");
@@ -179,7 +257,15 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
         }
         "SubagentStart" => {
             if let Some(id) = string(event, "agent_id") {
-                let kind = compact_agent(string(event, "agent_type").unwrap_or("agent"));
+                let reported = string(event, "agent_type").unwrap_or("agent");
+                let pending = runtime.pending_agent_names.pop_front();
+                let kind = pending.unwrap_or_else(|| {
+                    if matches!(reported, "default" | "agent") {
+                        compact_agent(id.rsplit(['/', ':']).next().unwrap_or(id))
+                    } else {
+                        compact_agent(reported)
+                    }
+                });
                 runtime.seen_agents.insert(id.into());
                 runtime.agents.insert(
                     id.into(),
@@ -274,13 +360,20 @@ fn sync_agents(runtime: &RuntimeState, snapshot: &mut StatusSnapshot) {
 }
 
 fn compact_tool(value: &str) -> String {
+    if is_spawn_agent_tool(value) {
+        return "spawn agent".into();
+    }
     let value = match value {
-        "Bash" => "exec",
+        "Bash" | "exec_command" => "exec",
         "apply_patch" => "patch",
         "Agent" => "agent",
         other => other.rsplit("__").next().unwrap_or(other),
     };
     sanitize_label(value, 20)
+}
+
+fn is_spawn_agent_tool(value: &str) -> bool {
+    value == "spawn_agent" || value.ends_with(".spawn_agent") || value.ends_with("__spawn_agent")
 }
 
 fn compact_agent(value: &str) -> String {
@@ -342,15 +435,45 @@ mod tests {
 
         apply_event(
             &json!({
+                "hook_event_name": "PreToolUse",
+                "tool_name": "collaboration.spawn_agent",
+                "tool_input": {"task_name": "runtime_flow"}
+            }),
+            &mut runtime,
+            &mut snapshot,
+        );
+
+        apply_event(
+            &json!({
                 "hook_event_name": "SubagentStart",
                 "agent_id": "agent-1",
-                "agent_type": "explore"
+                "agent_type": "default"
             }),
             &mut runtime,
             &mut snapshot,
         );
         assert_eq!(snapshot.agents_active, Some(1));
         assert_eq!(snapshot.agents_total, Some(1));
+        assert_eq!(snapshot.agents[0].kind, "runtime_flow");
+    }
+
+    #[test]
+    fn compact_hook_event_drops_large_tool_output_but_keeps_agent_name() {
+        let event = json!({
+            "hook_event_name": "PreToolUse",
+            "tool_name": "collaboration.spawn_agent",
+            "tool_input": {"task_name": "quality_delivery", "message": "secret prompt"},
+            "tool_response": "x".repeat(100_000)
+        });
+        let compact = super::compact_hook_event(&event);
+        assert_eq!(
+            compact
+                .pointer("/tool_input/task_name")
+                .and_then(|value| value.as_str()),
+            Some("quality_delivery")
+        );
+        assert!(compact.get("tool_response").is_none());
+        assert!(serde_json::to_vec(&compact).unwrap().len() < 1024);
     }
 
     #[test]

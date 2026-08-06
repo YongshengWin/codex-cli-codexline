@@ -412,6 +412,9 @@ fn prepare_pty(
     }
     let before = |error| (false, error);
     let after = |error| (true, error);
+    let launch_cwd = env::current_dir()
+        .context("could not resolve the Codexline launch directory")
+        .map_err(before)?;
     let (columns, rows) = crossterm::terminal::size()
         .context("could not read terminal size")
         .map_err(before)?;
@@ -450,6 +453,9 @@ fn prepare_pty(
     }
     let mut command = CommandBuilder::new(executable);
     command.args(&child_args);
+    // portable-pty defaults to the user's home directory on POSIX. Codex must inherit the
+    // directory where Codexline was invoked, just like a directly launched CLI process.
+    command.cwd(&launch_cwd);
     command.env("CODEXLINE_ACTIVE", "1");
     if let Some(server) = &event_server {
         command.env("CODEXLINE_EVENT_ENDPOINT", server.endpoint());

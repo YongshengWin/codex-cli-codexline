@@ -373,7 +373,7 @@ fn compact_tool(value: &str) -> String {
 }
 
 fn is_spawn_agent_tool(value: &str) -> bool {
-    value == "spawn_agent" || value.ends_with(".spawn_agent") || value.ends_with("__spawn_agent")
+    value == "Agent" || value == "spawn_agent" || value.ends_with("spawn_agent")
 }
 
 fn compact_agent(value: &str) -> String {
@@ -436,7 +436,7 @@ mod tests {
         apply_event(
             &json!({
                 "hook_event_name": "PreToolUse",
-                "tool_name": "collaboration.spawn_agent",
+                "tool_name": "Agent",
                 "tool_input": {"task_name": "runtime_flow"}
             }),
             &mut runtime,

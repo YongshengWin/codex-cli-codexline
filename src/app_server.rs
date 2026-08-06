@@ -3,7 +3,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -17,7 +17,7 @@ pub struct AppServerSource {
     child: Child,
     // Keeping stdin open owns the stdio transport lifetime. Dropping it immediately can make the
     // server observe EOF before the asynchronous rate-limit response is delivered.
-    _stdin: ChildStdin,
+    _stdin: Arc<Mutex<ChildStdin>>,
 }
 
 impl AppServerSource {
@@ -48,20 +48,67 @@ impl AppServerSource {
         }
         stdin.flush()?;
 
+        let stdin = Arc::new(Mutex::new(stdin));
+        let reader_snapshot = Arc::clone(&snapshot);
         thread::spawn(move || {
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
                 let Ok(message) = serde_json::from_str::<Value>(&line) else {
                     continue;
                 };
-                if let Ok(mut state) = snapshot.write() {
+                if let Ok(mut state) = reader_snapshot.write() {
                     apply_message(&message, &mut state);
                 }
             }
         });
+        let poll_stdin = Arc::clone(&stdin);
+        thread::spawn(move || poll_stored_thread(poll_stdin, snapshot));
         Ok(Self {
             child,
             _stdin: stdin,
         })
+    }
+}
+
+fn poll_stored_thread(stdin: Arc<Mutex<ChildStdin>>, snapshot: Arc<RwLock<StatusSnapshot>>) {
+    loop {
+        thread::sleep(Duration::from_secs(1));
+        let (session_id, agent_ids) = snapshot.read().map_or_else(
+            |_| (None, Vec::new()),
+            |state| {
+                (
+                    state.session_id.clone(),
+                    state
+                        .agents
+                        .iter()
+                        .take(8)
+                        .map(|agent| agent.id.clone())
+                        .collect::<Vec<_>>(),
+                )
+            },
+        );
+        let Some(session_id) = session_id else {
+            continue;
+        };
+        let mut requests = Vec::with_capacity(agent_ids.len() + 1);
+        requests.push(json!({"id": format!("codexline:root:{session_id}"), "method": "thread/turns/list", "params": {
+            "threadId": session_id, "limit": 1, "sortDirection": "desc", "itemsView": "full"
+        }}));
+        requests.extend(agent_ids.into_iter().enumerate().map(|(index, thread_id)| {
+            json!({"id": format!("codexline:agent:{thread_id}:{index}"), "method": "thread/turns/list", "params": {
+                "threadId": thread_id, "limit": 1, "sortDirection": "desc", "itemsView": "full"
+            }})
+        }));
+        let Ok(mut stdin) = stdin.lock() else {
+            break;
+        };
+        let write_result = requests.into_iter().try_for_each(|request| {
+            serde_json::to_writer(&mut *stdin, &request)?;
+            stdin.write_all(b"\n")?;
+            Ok::<_, anyhow::Error>(())
+        });
+        if write_result.is_err() || stdin.flush().is_err() {
+            break;
+        }
     }
 }
 
@@ -338,6 +385,27 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
         }
         return;
     }
+    if let Some(thread) = message.pointer("/result/thread") {
+        apply_stored_thread(thread, snapshot);
+        return;
+    }
+    if let Some(request_id) = message.get("id").and_then(Value::as_str) {
+        if let Some(session_id) = request_id.strip_prefix("codexline:root:") {
+            if snapshot.session_id.as_deref() == Some(session_id)
+                && let Some(turns) = message.pointer("/result/data").and_then(Value::as_array)
+            {
+                apply_parent_turns(turns, snapshot);
+            }
+            return;
+        }
+        if let Some(agent) = request_id.strip_prefix("codexline:agent:") {
+            let thread_id = agent.rsplit_once(':').map_or(agent, |(id, _)| id);
+            if let Some(turns) = message.pointer("/result/data").and_then(Value::as_array) {
+                apply_agent_turns(thread_id, turns, snapshot);
+            }
+            return;
+        }
+    }
     match message.get("method").and_then(Value::as_str) {
         Some("account/rateLimits/updated") => {
             if let Some(params) = message.get("params") {
@@ -387,6 +455,84 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
         }
         _ => {}
     }
+}
+
+fn apply_stored_thread(thread: &Value, snapshot: &mut StatusSnapshot) {
+    let Some(thread_id) = thread.get("id").and_then(Value::as_str) else {
+        return;
+    };
+    let is_subagent = thread
+        .get("parentThreadId")
+        .is_some_and(|parent| !parent.is_null());
+    if is_subagent {
+        let kind = thread
+            .pointer("/source/subAgent/thread_spawn/agent_path")
+            .and_then(Value::as_str)
+            .and_then(|path| path.rsplit('/').find(|part| !part.is_empty()))
+            .or_else(|| thread.get("agentRole").and_then(Value::as_str))
+            .or_else(|| thread.get("agentNickname").and_then(Value::as_str))
+            .unwrap_or("agent");
+        upsert_agent(snapshot, thread_id, kind, None);
+        let turns = thread
+            .get("turns")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        if let Some(latest) = turns.last() {
+            apply_agent_turns(thread_id, std::slice::from_ref(latest), snapshot);
+        }
+        return;
+    }
+
+    if snapshot.session_id.as_deref() != Some(thread_id) {
+        return;
+    }
+    let Some(turns) = thread.get("turns").and_then(Value::as_array) else {
+        return;
+    };
+    apply_parent_turns(turns, snapshot);
+}
+
+fn apply_parent_turns(turns: &[Value], snapshot: &mut StatusSnapshot) {
+    for item in turns
+        .iter()
+        .filter_map(|turn| turn.get("items").and_then(Value::as_array))
+        .flatten()
+        .filter(|item| item.get("type").and_then(Value::as_str) == Some("subAgentActivity"))
+    {
+        let (Some(id), Some(path)) = (
+            item.get("agentThreadId").and_then(Value::as_str),
+            item.get("agentPath").and_then(Value::as_str),
+        ) else {
+            continue;
+        };
+        let kind = path
+            .rsplit('/')
+            .find(|part| !part.is_empty())
+            .unwrap_or("agent");
+        upsert_agent(snapshot, id, kind, None);
+        if item.get("kind").and_then(Value::as_str) != Some("started") {
+            set_agent_status(snapshot, id, "completed", None);
+        }
+    }
+}
+
+fn apply_agent_turns(thread_id: &str, turns: &[Value], snapshot: &mut StatusSnapshot) {
+    let status = turns
+        .first()
+        .and_then(|turn| turn.get("status"))
+        .and_then(Value::as_str)
+        .unwrap_or("running");
+    let message = turns.iter().find_map(|turn| {
+        turn.get("items")
+            .and_then(Value::as_array)?
+            .iter()
+            .rev()
+            .find(|item| item.get("type").and_then(Value::as_str) == Some("agentMessage"))?
+            .get("text")?
+            .as_str()
+    });
+    set_agent_status(snapshot, thread_id, status, message);
 }
 
 fn apply_agent_item(item: &Value, thread_id: Option<&str>, snapshot: &mut StatusSnapshot) {
@@ -448,7 +594,7 @@ fn set_agent_status(snapshot: &mut StatusSnapshot, id: &str, status: &str, messa
         upsert_agent(snapshot, id, "agent", None);
     }
     if let Some(agent) = snapshot.agents.iter_mut().find(|agent| agent.id == id) {
-        agent.active = matches!(status, "pendingInit" | "running" | "active");
+        agent.active = matches!(status, "pendingInit" | "running" | "active" | "inProgress");
         if let Some(message) = message {
             agent.message = Some(sanitize_agent_text(message));
         }
@@ -586,6 +732,70 @@ mod tests {
         assert_eq!(
             snapshot.agents[0].message.as_deref(),
             Some("Found the layout")
+        );
+    }
+
+    #[test]
+    fn stored_thread_reads_enrich_agent_names_and_progress() {
+        let mut snapshot = StatusSnapshot {
+            session_id: Some("root".into()),
+            ..StatusSnapshot::default()
+        };
+        apply_message(
+            &json!({"id": 100, "result": {"thread": {
+                "id": "root", "parentThreadId": null, "turns": [{"items": [{
+                    "type": "subAgentActivity", "kind": "started",
+                    "agentThreadId": "child-1", "agentPath": "/root/architecture"
+                }]}]
+            }}}),
+            &mut snapshot,
+        );
+        assert_eq!(snapshot.agents[0].kind, "architecture");
+
+        apply_message(
+            &json!({"id": 101, "result": {"thread": {
+                "id": "child-1", "parentThreadId": "root",
+                "source": {"subAgent": {"thread_spawn": {"agent_path": "/root/architecture"}}},
+                "turns": [{"status": "inProgress", "items": [
+                    {"type": "agentMessage", "text": "Comparing DESIGN.md with the renderer"}
+                ]}]
+            }}}),
+            &mut snapshot,
+        );
+        assert!(snapshot.agents[0].active);
+        assert_eq!(
+            snapshot.agents[0].message.as_deref(),
+            Some("Comparing DESIGN.md with the renderer")
+        );
+    }
+
+    #[test]
+    fn paged_turn_reads_update_agents_without_loading_full_history() {
+        let mut snapshot = StatusSnapshot {
+            session_id: Some("root".into()),
+            ..StatusSnapshot::default()
+        };
+        apply_message(
+            &json!({"id": "codexline:root:root", "result": {"data": [{
+                "status": "inProgress", "items": [{
+                    "type": "subAgentActivity", "kind": "started",
+                    "agentThreadId": "child-1", "agentPath": "/root/quality"
+                }]
+            }]}}),
+            &mut snapshot,
+        );
+        apply_message(
+            &json!({"id": "codexline:agent:child-1:0", "result": {"data": [{
+                "status": "inProgress", "items": [{
+                    "type": "agentMessage", "text": "Running the test matrix"
+                }]
+            }]}}),
+            &mut snapshot,
+        );
+        assert_eq!(snapshot.agents[0].kind, "quality");
+        assert_eq!(
+            snapshot.agents[0].message.as_deref(),
+            Some("Running the test matrix")
         );
     }
 

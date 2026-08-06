@@ -483,6 +483,8 @@ fn prepare_pty(
     let mut renderer = StatusRenderer::new(display.clone(), Arc::clone(&snapshot));
     let agent_panel = renderer.agent_panel();
     let input_snapshot = Arc::clone(&snapshot);
+    let agent_panel_changed = Arc::new(AtomicBool::new(false));
+    let input_agent_panel_changed = Arc::clone(&agent_panel_changed);
 
     let writer = Arc::new(Mutex::new(pair.master.take_writer().map_err(after)?));
     let input_writer = Arc::clone(&writer);
@@ -516,7 +518,12 @@ fn prepare_pty(
             let ctrl_c = buffer[..count].contains(&0x03);
             let handled = !ctrl_c
                 && agent_panel.lock().map_or(true, |mut panel| {
-                    panel.handle_input(&buffer[..count], agent_count)
+                    let previous = *panel;
+                    let handled = panel.handle_input(&buffer[..count], agent_count);
+                    if *panel != previous {
+                        input_agent_panel_changed.store(true, Ordering::Release);
+                    }
+                    handled
                 });
             if handled {
                 continue;
@@ -636,6 +643,10 @@ fn prepare_pty(
             }
         }
         let shutting_down = interrupted.load(Ordering::Acquire);
+        let redraw_agent_panel = agent_panel_changed.swap(false, Ordering::AcqRel);
+        if redraw_agent_panel {
+            renderer.invalidate();
+        }
         if !shutting_down {
             if let Ok(size) = crossterm::terminal::size() {
                 if size != last_size {
@@ -696,7 +707,7 @@ fn prepare_pty(
             && (synchronized_frame_ended || last_child_output.elapsed() >= frame_interval);
         let refresh_hud = hud_visible
             && !hud_invalidated
-            && last_draw.elapsed() >= Duration::from_secs(1)
+            && (redraw_agent_panel || last_draw.elapsed() >= Duration::from_secs(1))
             && last_child_output.elapsed() >= frame_interval;
         if !shutting_down
             && !synchronized_output.active()

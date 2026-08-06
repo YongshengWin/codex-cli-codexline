@@ -86,7 +86,7 @@ enum AgentPanelMode {
     Detail,
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct AgentPanelState {
     mode: AgentPanelMode,
     selected: usize,
@@ -96,28 +96,52 @@ impl AgentPanelState {
     /// Returns true when the input belongs to the inspector and must not reach Codex.
     pub fn handle_input(&mut self, input: &[u8], agent_count: usize) -> bool {
         if self.mode == AgentPanelMode::Passive {
-            if input == [0x07] && agent_count > 0 {
+            if input.contains(&0x07) && agent_count > 0 {
                 self.mode = AgentPanelMode::List;
                 self.selected = self.selected.min(agent_count.saturating_sub(1));
                 return true;
             }
             return false;
         }
-        if input == b"\x1b" {
-            self.mode = match self.mode {
-                AgentPanelMode::Detail => AgentPanelMode::List,
-                AgentPanelMode::List | AgentPanelMode::Passive => AgentPanelMode::Passive,
-            };
-        } else if matches!(input, b"\x1b[A" | b"\x1bOA") {
-            self.selected = self.selected.saturating_sub(1);
-        } else if matches!(input, b"\x1b[B" | b"\x1bOB") {
-            self.selected = (self.selected + 1).min(agent_count.saturating_sub(1));
-        } else if matches!(input, b"\r" | b"\n") && agent_count > 0 {
-            self.mode = AgentPanelMode::Detail;
-        } else if input == [0x07] {
-            self.mode = AgentPanelMode::Passive;
+        let mut offset = 0;
+        while offset < input.len() {
+            let remaining = &input[offset..];
+            if remaining.starts_with(b"\x1b[A") || remaining.starts_with(b"\x1bOA") {
+                self.selected = self.selected.saturating_sub(1);
+                offset += 3;
+            } else if remaining.starts_with(b"\x1b[B") || remaining.starts_with(b"\x1bOB") {
+                self.selected = (self.selected + 1).min(agent_count.saturating_sub(1));
+                offset += 3;
+            } else if remaining.starts_with(b"\x1b[C") || remaining.starts_with(b"\x1bOC") {
+                if agent_count > 0 {
+                    self.mode = AgentPanelMode::Detail;
+                }
+                offset += 3;
+            } else if remaining.starts_with(b"\x1b[D") || remaining.starts_with(b"\x1bOD") {
+                self.back();
+                offset += 3;
+            } else if matches!(remaining[0], b'\r' | b'\n') && agent_count > 0 {
+                self.mode = AgentPanelMode::Detail;
+                offset += 1;
+            } else if remaining[0] == 0x1b {
+                self.back();
+                offset += 1;
+            } else if remaining[0] == 0x07 {
+                self.mode = AgentPanelMode::Passive;
+                offset += 1;
+            } else {
+                // Focused inspector owns regular input so it cannot leak into the Codex prompt.
+                offset += 1;
+            }
         }
         true
+    }
+
+    fn back(&mut self) {
+        self.mode = match self.mode {
+            AgentPanelMode::Detail => AgentPanelMode::List,
+            AgentPanelMode::List | AgentPanelMode::Passive => AgentPanelMode::Passive,
+        };
     }
 }
 
@@ -225,11 +249,9 @@ fn agent_panel_layouts(
     let active = agents.iter().filter(|agent| agent.active).count();
     let total = usize::from(snapshot.agents_total.unwrap_or(0)).max(agents.len());
     let header = match panel.mode {
-        AgentPanelMode::Passive => {
-            format!("AGENTS {active}/{total} · Ctrl+G focus")
-        }
+        AgentPanelMode::Passive => format!("AGENTS {active}/{total} · Press Ctrl+G to inspect"),
         AgentPanelMode::List => format!(
-            "AGENTS {active}/{} · ↑↓ select · Enter view · Esc close",
+            "AGENT INSPECTOR {active}/{} · ↑↓ choose · →/Enter open · ←/Esc close",
             total
         ),
         AgentPanelMode::Detail => {
@@ -252,7 +274,7 @@ fn agent_panel_layouts(
             };
             for (index, agent) in agents.iter().enumerate().skip(start).take(3) {
                 let marker = if panel.mode == AgentPanelMode::List && index == panel.selected {
-                    "›"
+                    "▶"
                 } else {
                     " "
                 };
@@ -1597,15 +1619,19 @@ mod tests {
         let snapshot = crate::state::StatusSnapshot::showcase();
         let mut panel = AgentPanelState::default();
         let passive = agent_panel_layouts(100, &snapshot, panel);
-        assert!(passive[0][0].1.contains("Ctrl+G focus"));
+        assert!(passive[0][0].1.contains("Press Ctrl+G to inspect"));
         assert!(passive.iter().any(|row| row[0].1.contains("explore")));
 
         assert!(panel.handle_input(&[0x07], snapshot.agents.len()));
-        assert!(panel.handle_input(b"\x1b[B", snapshot.agents.len()));
-        assert!(panel.handle_input(b"\r", snapshot.agents.len()));
+        assert!(panel.handle_input(b"\x1b[B\x1b[C", snapshot.agents.len()));
         let detail = agent_panel_layouts(100, &snapshot, panel);
         assert!(detail.iter().any(|row| row[0].1.starts_with("Goal")));
         assert!(detail.iter().any(|row| row[0].1.starts_with("Latest")));
+
+        assert!(panel.handle_input(b"\x1b[D", snapshot.agents.len()));
+        let list = agent_panel_layouts(100, &snapshot, panel);
+        assert!(list[0][0].1.contains("AGENT INSPECTOR"));
+        assert!(list.iter().any(|row| row[0].1.starts_with("▶")));
     }
 
     #[test]

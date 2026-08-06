@@ -46,9 +46,19 @@ fn native_pty_or_conpty_supports_a_bidirectional_session() {
     });
 
     #[cfg(windows)]
-    input
-        .write_all(b"echo CODEXLINE_PTY_OK\r\nexit\r\n")
-        .expect("PTY input should be writable");
+    {
+        // ConPTY asks its terminal emulator for the cursor position (`CSI 6 n`) during
+        // startup. Codexline normally relays the real terminal's reply; this headless test
+        // must provide the conventional row 1, column 1 response itself.
+        input
+            .write_all(b"\x1b[1;1R")
+            .expect("ConPTY cursor-position reply should be writable");
+        input.flush().expect("ConPTY reply should flush");
+        thread::sleep(Duration::from_millis(20));
+        input
+            .write_all(b"echo CODEXLINE_PTY_OK\r\nexit\r\n")
+            .expect("PTY input should be writable");
+    }
     #[cfg(not(windows))]
     input
         .write_all(b"printf CODEXLINE_PTY_OK\\n\nexit\n")

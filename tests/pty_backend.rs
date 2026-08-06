@@ -1,7 +1,7 @@
 use std::io::Read;
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 
@@ -48,7 +48,7 @@ fn native_pty_or_conpty_runs_a_real_child() {
     drop(input);
 
     let (output_tx, output_rx) = mpsc::channel();
-    thread::spawn(move || {
+    let reader_thread = thread::spawn(move || {
         let mut output = Vec::new();
         let mut buffer = [0_u8; 4096];
         loop {
@@ -72,24 +72,17 @@ fn native_pty_or_conpty_runs_a_real_child() {
         let _ = output_tx.send(Ok(output));
     });
 
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let status = loop {
-        if let Some(status) = child.try_wait().expect("fixture status should be readable") {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("native PTY fixture did not exit within five seconds");
-        }
-        thread::sleep(Duration::from_millis(10));
-    };
     let output = output_rx
         .recv_timeout(Duration::from_secs(5))
         .expect("PTY output reader timed out")
         .expect("PTY output should be readable");
+    reader_thread.join().expect("PTY reader should stop");
     let output = String::from_utf8_lossy(&output);
 
-    assert!(status.success());
     assert!(output.contains("CODEXLINE_PTY_OK"), "output was {output:?}");
+    // ConPTY's host lifetime is owned by the master handle, not by cmd.exe's output pipe.
+    // Close that owner before reaping so the test models Codexline's real teardown order.
+    drop(pair.master);
+    let _ = child.kill();
+    child.wait().expect("fixture should be reaped");
 }

@@ -448,10 +448,14 @@ Launch <-> Preset <-> Modules <-> Appearance <-> Data <-> Review
 是起点而不是锁定模板；用户修改任何单项后，配置状态变为 Custom。窗口小于最低
 尺寸时显示 resize 提示；`CODEXLINE_CONFIG_LINEAR=1` 提供 screen reader 和兼容回退。
 
-Modules 不得把全部字段放进单一纵向长列表，也不得把未选分类的模块隐藏。它使用
-Core、Usage、Workspace、Activity 和 Runtime 五列总览，所有模块同时可见；在 Modules
-页中 `←/→` 跨列移动，`↑/↓` 在列内移动，选中项下方显示其完整信号摘要，
-Tab/Shift+Tab 返回主步骤导航。焦点移动不得改变用户已配置的模块顺序。
+Modules 不得把全部字段放进单一纵向长列表。它使用 Core、Usage、Workspace、Activity
+和 Runtime 五个横向分类；在 Modules 页中 `←/→` 切换分类，`↑/↓` 只遍历当前分类，
+Tab/Shift+Tab 返回主步骤导航。分类切换不得改变用户已配置的模块顺序。每个分类必须
+同时提供摘要模块与真实字段级模块；字段未知时遵循 omit-on-unknown，不能显示伪造的零。
+
+字段级模块至少覆盖 reasoning、context remaining/used/window、input/cached/output tokens、
+5-hour/weekly limits、reset credits、Git dirty/staged/modified/ahead-behind、project root、
+agent active/total、thread ID，以及 hooks/app-server 的独立健康状态。
 
 Launch 步骤必须让用户明确选择启动方式：
 

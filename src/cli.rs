@@ -424,8 +424,8 @@ fn print_module_choices(selected: &[Segment]) {
     }
 }
 
-fn module_choices() -> [(u8, Segment, &'static str); 16] {
-    [
+fn module_choices() -> Vec<(u8, Segment, &'static str)> {
+    vec![
         (1, Segment::App, "App       Codex identity"),
         (2, Segment::Model, "Model     Model and reasoning"),
         (3, Segment::Work, "Work      Turn phase and active tool"),
@@ -461,6 +461,69 @@ fn module_choices() -> [(u8, Segment, &'static str); 16] {
             16,
             Segment::RateLimits,
             "Limits    5h/weekly quota and reset",
+        ),
+        (17, Segment::Reasoning, "Reasoning Active reasoning effort"),
+        (
+            18,
+            Segment::ContextRemaining,
+            "Ctx left  Context percentage remaining",
+        ),
+        (
+            19,
+            Segment::ContextUsed,
+            "Ctx used  Context percentage used",
+        ),
+        (
+            20,
+            Segment::ContextWindow,
+            "Ctx size  Context window token capacity",
+        ),
+        (21, Segment::InputTokens, "Input     Input token count"),
+        (
+            22,
+            Segment::CachedTokens,
+            "Cache     Cached input token count",
+        ),
+        (23, Segment::OutputTokens, "Output    Output token count"),
+        (
+            24,
+            Segment::FiveHourLimit,
+            "5-hour   Remaining quota and reset",
+        ),
+        (
+            25,
+            Segment::WeeklyLimit,
+            "Weekly    Remaining quota and reset",
+        ),
+        (
+            26,
+            Segment::ResetCredits,
+            "Resets    Extra usage reset credits",
+        ),
+        (
+            27,
+            Segment::GitDirty,
+            "Git state Clean or dirty working tree",
+        ),
+        (28, Segment::GitStaged, "Staged    Staged file count"),
+        (29, Segment::GitModified, "Modified  Modified file count"),
+        (30, Segment::GitSync, "Git sync  Ahead and behind counts"),
+        (31, Segment::ProjectRoot, "Root      Project root path"),
+        (32, Segment::AgentCount, "Agent #   Active and total agents"),
+        (
+            33,
+            Segment::SessionId,
+            "Thread ID Current session identifier",
+        ),
+        (
+            34,
+            Segment::HooksHealth,
+            "Hooks     Hook event source health",
+        ),
+        (
+            35,
+            Segment::AppServerHealth,
+            "App srv   App-server source health",
         ),
     ]
 }

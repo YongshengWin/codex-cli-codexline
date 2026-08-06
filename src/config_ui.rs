@@ -361,7 +361,15 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
     let preview_y = footer_y.saturating_sub(preview_lines.len() as u16);
     let divider_y = preview_y.saturating_sub(2);
     if editor.page == Page::Modules {
-        draw_module_grid(output, editor, 2, 5, content_width, divider_y)?;
+        draw_module_categories(output, editor, 2, 5)?;
+        draw_options(
+            output,
+            editor,
+            2,
+            7,
+            content_width,
+            divider_y.saturating_sub(7),
+        )?;
     } else {
         let options_y = 6;
         draw_options(
@@ -396,87 +404,29 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
     Ok(())
 }
 
-fn draw_module_grid(
-    output: &mut impl Write,
-    editor: &Editor,
-    x: u16,
-    y: u16,
-    width: u16,
-    bottom: u16,
-) -> Result<()> {
-    let column_width = (width / ModuleCategory::ALL.len() as u16).max(1);
-    for (column, category) in ModuleCategory::ALL.into_iter().enumerate() {
-        let column_x = x + column as u16 * column_width;
-        let active_category = category == editor.module_category;
+fn draw_module_categories(output: &mut impl Write, editor: &Editor, x: u16, y: u16) -> Result<()> {
+    let mut category_x = x;
+    for category in ModuleCategory::ALL {
+        let active = category == editor.module_category;
         queue!(
             output,
-            MoveTo(column_x, y),
-            SetForegroundColor(if active_category {
-                Color::Cyan
-            } else {
-                Color::DarkGrey
-            }),
-            SetAttribute(if active_category {
+            MoveTo(category_x, y),
+            SetForegroundColor(if active { Color::Cyan } else { Color::DarkGrey }),
+            SetAttribute(if active {
                 Attribute::Bold
             } else {
                 Attribute::Reset
             }),
-            Print(truncate(
-                &format!(
-                    "{} {}",
-                    if active_category { "◆" } else { "·" },
-                    category.title()
-                ),
-                column_width.saturating_sub(1) as usize,
+            Print(format!(
+                "{} {} ",
+                if active { "◆" } else { "·" },
+                category.title()
             )),
             SetAttribute(Attribute::Reset),
             ResetColor
         )?;
-
-        for (row, (segment, _)) in module_choices(category).iter().enumerate() {
-            let focused = active_category && row == editor.cursor;
-            let selected = editor.config.display.segments.contains(segment);
-            let label = format!(
-                "{}[{}] {}",
-                if focused { "›" } else { " " },
-                if selected { "x" } else { " " },
-                module_short_name(*segment),
-            );
-            queue!(
-                output,
-                MoveTo(column_x, y + 2 + row as u16),
-                SetForegroundColor(if focused {
-                    Color::Cyan
-                } else if selected {
-                    Color::Green
-                } else {
-                    Color::Grey
-                }),
-                SetAttribute(if focused {
-                    Attribute::Bold
-                } else {
-                    Attribute::Reset
-                }),
-                Print(truncate(&label, column_width.saturating_sub(1) as usize)),
-                SetAttribute(Attribute::Reset),
-                ResetColor
-            )?;
-        }
+        category_x += category.title().len() as u16 + 4;
     }
-
-    let segment = module_choices(editor.module_category)[editor.cursor].0;
-    let detail = format!(
-        "{} · {}",
-        module_short_name(segment),
-        module_detail(segment)
-    );
-    queue!(
-        output,
-        MoveTo(x, bottom.saturating_sub(1)),
-        SetForegroundColor(Color::Grey),
-        Print(truncate(&detail, width as usize)),
-        ResetColor
-    )?;
     Ok(())
 }
 
@@ -667,74 +617,55 @@ fn module_choices(category: ModuleCategory) -> &'static [(Segment, &'static str)
     match category {
         ModuleCategory::Core => &[
             (Segment::App, "App · Codex identity"),
-            (Segment::Model, "Model · model and reasoning"),
+            (Segment::Model, "Model summary · model and reasoning"),
+            (Segment::Reasoning, "Reasoning effort"),
             (Segment::Work, "Work · phase and active tool"),
+            (Segment::Elapsed, "Elapsed · session timer"),
+            (Segment::SessionId, "Thread ID · current session"),
         ],
         ModuleCategory::Usage => &[
-            (Segment::Context, "Context · pressure bar"),
-            (Segment::Tokens, "Tokens · input/cache/output"),
-            (Segment::RateLimits, "Limits · quota and reset"),
+            (
+                Segment::Context,
+                "Context summary · pressure bar and tokens",
+            ),
+            (Segment::ContextRemaining, "Context remaining · percentage"),
+            (Segment::ContextUsed, "Context used · percentage"),
+            (Segment::ContextWindow, "Context window · token capacity"),
+            (Segment::Tokens, "Token summary · input/cache/output"),
+            (Segment::InputTokens, "Input tokens"),
+            (Segment::CachedTokens, "Cached input tokens"),
+            (Segment::OutputTokens, "Output tokens"),
+            (Segment::RateLimits, "Limit summary · quota and reset"),
+            (Segment::FiveHourLimit, "5-hour limit · remaining and reset"),
+            (Segment::WeeklyLimit, "Weekly limit · remaining and reset"),
+            (Segment::ResetCredits, "Extra usage resets"),
         ],
         ModuleCategory::Workspace => &[
-            (Segment::Git, "Git · branch and changes"),
+            (Segment::Git, "Git summary · branch and changes"),
+            (Segment::GitDirty, "Git working-tree state"),
+            (Segment::GitStaged, "Git staged file count"),
+            (Segment::GitModified, "Git modified file count"),
+            (Segment::GitSync, "Git ahead/behind"),
             (Segment::Worktree, "Worktree · linked workspace"),
             (Segment::Cwd, "Directory · workspace path"),
+            (Segment::ProjectRoot, "Project root"),
         ],
         ModuleCategory::Activity => &[
             (Segment::Tools, "Tools · recent activity"),
-            (Segment::Agents, "Agents · state and elapsed"),
+            (
+                Segment::Agents,
+                "Agent detail panel · role/task/message/time",
+            ),
+            (Segment::AgentCount, "Agent count · active/total"),
             (Segment::Plan, "Plan · progress"),
             (Segment::Compactions, "Compactions · count"),
         ],
         ModuleCategory::Runtime => &[
             (Segment::Safety, "Safety · sandbox and approval"),
-            (Segment::Elapsed, "Elapsed · session timer"),
-            (Segment::Status, "Status · source health"),
+            (Segment::Status, "Source health summary"),
+            (Segment::HooksHealth, "Hooks event health"),
+            (Segment::AppServerHealth, "App-server health"),
         ],
-    }
-}
-
-fn module_short_name(segment: Segment) -> &'static str {
-    match segment {
-        Segment::App => "App",
-        Segment::Model => "Model",
-        Segment::Work => "Work",
-        Segment::Context => "Context",
-        Segment::Tokens => "Tokens",
-        Segment::RateLimits => "Limits",
-        Segment::Git => "Git",
-        Segment::Worktree => "Worktree",
-        Segment::Tools => "Tools",
-        Segment::Agents => "Agents",
-        Segment::Plan => "Plan",
-        Segment::Compactions => "Compacts",
-        Segment::Safety => "Safety",
-        Segment::Elapsed => "Elapsed",
-        Segment::Cwd => "Directory",
-        Segment::Status => "Health",
-    }
-}
-
-fn module_detail(segment: Segment) -> &'static str {
-    match segment {
-        Segment::App => "Codex identity, activity indicator",
-        Segment::Model => "model name, reasoning effort",
-        Segment::Work => "run state, active tool, turn phase",
-        Segment::Context => "remaining/used context, pressure bar, window size",
-        Segment::Tokens => "input, cached input, output, total tokens",
-        Segment::RateLimits => "5-hour and weekly limits, reset countdown, reset credits",
-        Segment::Git => "branch, dirty, staged, modified, ahead/behind",
-        Segment::Worktree => "worktree name and linked-worktree state",
-        Segment::Tools => "active tool, recent tools, invocation counts",
-        Segment::Agents => {
-            "active/total agents, role, task, latest message, elapsed time, completion state"
-        }
-        Segment::Plan => "completed/total steps and current task progress",
-        Segment::Compactions => "context compaction count",
-        Segment::Safety => "permission profile, sandbox, approval mode",
-        Segment::Elapsed => "turn and session elapsed time",
-        Segment::Cwd => "working directory and project root",
-        Segment::Status => "hooks, app-server, event and local-probe health",
     }
 }
 

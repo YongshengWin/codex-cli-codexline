@@ -369,7 +369,12 @@ fn status_layouts(
             .filter(|(segment, _)| {
                 matches!(
                     segment,
-                    Segment::App | Segment::Model | Segment::Work | Segment::Elapsed
+                    Segment::App
+                        | Segment::Model
+                        | Segment::Reasoning
+                        | Segment::Work
+                        | Segment::Elapsed
+                        | Segment::SessionId
                 )
             })
             .cloned()
@@ -377,7 +382,17 @@ fn status_layouts(
         let workspace = segments
             .iter()
             .filter(|(segment, _)| {
-                matches!(segment, Segment::Git | Segment::Worktree | Segment::Cwd)
+                matches!(
+                    segment,
+                    Segment::Git
+                        | Segment::GitDirty
+                        | Segment::GitStaged
+                        | Segment::GitModified
+                        | Segment::GitSync
+                        | Segment::Worktree
+                        | Segment::Cwd
+                        | Segment::ProjectRoot
+                )
             })
             .cloned()
             .collect::<Vec<_>>();
@@ -387,14 +402,26 @@ fn status_layouts(
                 matches!(
                     segment,
                     Segment::Context
+                        | Segment::ContextRemaining
+                        | Segment::ContextUsed
+                        | Segment::ContextWindow
                         | Segment::Tokens
+                        | Segment::InputTokens
+                        | Segment::CachedTokens
+                        | Segment::OutputTokens
                         | Segment::RateLimits
+                        | Segment::FiveHourLimit
+                        | Segment::WeeklyLimit
+                        | Segment::ResetCredits
                         | Segment::Agents
+                        | Segment::AgentCount
                         | Segment::Tools
                         | Segment::Plan
                         | Segment::Compactions
                         | Segment::Safety
                         | Segment::Status
+                        | Segment::HooksHealth
+                        | Segment::AppServerHealth
                 )
             })
             .cloned()
@@ -491,14 +518,59 @@ fn segment_text(
                 Some(reasoning) => format!("{model} {reasoning}"),
                 None => model.clone(),
             }),
+        Segment::Reasoning => snapshot
+            .reasoning
+            .as_ref()
+            .map(|reasoning| format!("reasoning {}", sanitize_dynamic(reasoning))),
         Segment::Work => snapshot.work.clone(),
         Segment::Context => context_text(snapshot),
+        Segment::ContextRemaining => context_percent(snapshot)
+            .map(|percent| format!("ctx {}% left", 100_u8.saturating_sub(percent))),
+        Segment::ContextUsed => {
+            context_percent(snapshot).map(|percent| format!("ctx {percent}% used"))
+        }
+        Segment::ContextWindow => snapshot
+            .context_window
+            .map(|window| format!("window {}", compact_number(window))),
         Segment::Tokens => token_text(snapshot),
+        Segment::InputTokens => snapshot
+            .input_tokens
+            .map(|tokens| format!("in {}", compact_number(tokens))),
+        Segment::CachedTokens => snapshot
+            .cached_input_tokens
+            .map(|tokens| format!("cache {}", compact_number(tokens))),
+        Segment::OutputTokens => snapshot
+            .output_tokens
+            .map(|tokens| format!("out {}", compact_number(tokens))),
         Segment::RateLimits => rate_limits_text(snapshot),
+        Segment::FiveHourLimit => limit_text(snapshot, false),
+        Segment::WeeklyLimit => limit_text(snapshot, true),
+        Segment::ResetCredits => snapshot
+            .reset_credits
+            .map(|credits| format!("reset ×{credits}")),
         Segment::Git => snapshot
             .git_branch
             .as_ref()
             .map(|branch| git_text(branch, snapshot)),
+        Segment::GitDirty => snapshot.git_dirty.map(|dirty| {
+            if dirty {
+                "git dirty".into()
+            } else {
+                "git clean".into()
+            }
+        }),
+        Segment::GitStaged => snapshot.git_staged.map(|count| format!("staged {count}")),
+        Segment::GitModified => snapshot
+            .git_modified
+            .map(|count| format!("modified {count}")),
+        Segment::GitSync => match (snapshot.git_ahead, snapshot.git_behind) {
+            (None, None) => None,
+            (ahead, behind) => Some(format!(
+                "sync ↑{} ↓{}",
+                ahead.unwrap_or(0),
+                behind.unwrap_or(0)
+            )),
+        },
         Segment::Worktree => snapshot.worktree.as_ref().map(|worktree| {
             format!(
                 "WT {}{}",
@@ -512,6 +584,7 @@ fn segment_text(
         }),
         Segment::Tools => tools_text(snapshot),
         Segment::Agents => agents_text(snapshot),
+        Segment::AgentCount => agent_count_text(snapshot),
         Segment::Plan => match (snapshot.plan_completed, snapshot.plan_total) {
             (Some(completed), Some(total)) => Some(format!("{completed}/{total} plan")),
             _ => None,
@@ -523,6 +596,14 @@ fn segment_text(
         Segment::Safety => snapshot.safety.as_deref().map(sanitize_dynamic),
         Segment::Elapsed => Some(format!("{elapsed}s")),
         Segment::Cwd => Some(format!("DIR {cwd}")),
+        Segment::ProjectRoot => snapshot
+            .project_root
+            .as_deref()
+            .map(|root| format!("ROOT {}", compact_path(root))),
+        Segment::SessionId => snapshot
+            .session_id
+            .as_deref()
+            .map(|id| format!("thread {}", sanitize_dynamic(id))),
         Segment::Status => Some(if snapshot.events_active && snapshot.app_server_active {
             "H+A ✓".into()
         } else if snapshot.app_server_active {
@@ -531,6 +612,16 @@ fn segment_text(
             "HOOK ✓".into()
         } else {
             "LOCAL".into()
+        }),
+        Segment::HooksHealth => Some(if snapshot.events_active {
+            "HOOK ✓".into()
+        } else {
+            "HOOK —".into()
+        }),
+        Segment::AppServerHealth => Some(if snapshot.app_server_active {
+            "APP ✓".into()
+        } else {
+            "APP —".into()
         }),
     }
 }
@@ -573,17 +664,7 @@ fn workspace_path(snapshot: &StatusSnapshot) -> String {
 }
 
 fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
-    let percent = snapshot.context_percent.or_else(|| {
-        let used = snapshot.context_used?;
-        let window = snapshot.context_window?.max(1);
-        Some(
-            (used
-                .saturating_mul(100)
-                .saturating_add(window.saturating_sub(1))
-                / window)
-                .min(100) as u8,
-        )
-    })?;
+    let percent = context_percent(snapshot)?;
     let mut text = context_bar(percent);
     if let (Some(used), Some(window)) = (snapshot.context_used, snapshot.context_window) {
         text.push_str(&format!(
@@ -593,6 +674,20 @@ fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
         ));
     }
     Some(text)
+}
+
+fn context_percent(snapshot: &StatusSnapshot) -> Option<u8> {
+    snapshot.context_percent.or_else(|| {
+        let used = snapshot.context_used?;
+        let window = snapshot.context_window?.max(1);
+        Some(
+            (used
+                .saturating_mul(100)
+                .saturating_add(window.saturating_sub(1))
+                / window)
+                .min(100) as u8,
+        )
+    })
 }
 
 fn token_text(snapshot: &StatusSnapshot) -> Option<String> {
@@ -634,6 +729,31 @@ fn rate_limits_text(snapshot: &StatusSnapshot) -> Option<String> {
         parts.push(format!("+{credits}"));
     }
     (!parts.is_empty()).then(|| parts.join("  "))
+}
+
+fn limit_text(snapshot: &StatusSnapshot, weekly: bool) -> Option<String> {
+    let mut windows = snapshot.rate_limits.iter().collect::<Vec<_>>();
+    windows.sort_by_key(|window| window.window_minutes.unwrap_or(u64::MAX));
+    let window = if weekly {
+        windows.iter().rev().find(|window| {
+            window
+                .window_minutes
+                .is_some_and(|minutes| minutes >= 7 * 24 * 60)
+        })
+    } else {
+        windows
+            .iter()
+            .find(|window| window.window_minutes.is_some_and(|minutes| minutes <= 360))
+    }
+    .copied()?;
+    let label = if weekly { "WEEK" } else { "5H" };
+    let left = 100_u8.saturating_sub(window.used_percent);
+    let reset = window
+        .resets_at
+        .and_then(reset_in)
+        .map(|value| format!(" ↻{value}"))
+        .unwrap_or_default();
+    Some(format!("{label} {left}%{reset}"))
 }
 
 fn reset_in(timestamp: u64) -> Option<String> {
@@ -702,6 +822,17 @@ fn agents_text(snapshot: &StatusSnapshot) -> Option<String> {
     }
 }
 
+fn agent_count_text(snapshot: &StatusSnapshot) -> Option<String> {
+    if let (Some(active), Some(total)) = (snapshot.agents_active, snapshot.agents_total) {
+        return Some(format!("agents {active}/{total}"));
+    }
+    if !snapshot.agents.is_empty() {
+        let active = snapshot.agents.iter().filter(|agent| agent.active).count();
+        return Some(format!("agents {active}/{}", snapshot.agents.len()));
+    }
+    None
+}
+
 fn compact_duration(seconds: u64) -> String {
     if seconds < 60 {
         format!("{seconds}s")
@@ -758,20 +889,32 @@ fn segment_priority(segment: Segment) -> u8 {
     match segment {
         Segment::Work => 100,
         Segment::Context => 95,
+        Segment::ContextRemaining | Segment::ContextUsed => 94,
+        Segment::ContextWindow => 68,
         Segment::RateLimits => 94,
+        Segment::FiveHourLimit | Segment::WeeklyLimit => 93,
+        Segment::ResetCredits => 66,
         Segment::Tokens => 72,
+        Segment::InputTokens | Segment::CachedTokens | Segment::OutputTokens => 64,
         Segment::Model => 90,
+        Segment::Reasoning => 74,
         Segment::Git => 93,
+        Segment::GitDirty => 85,
+        Segment::GitStaged | Segment::GitModified | Segment::GitSync => 76,
         Segment::Worktree => 86,
         Segment::Tools => 78,
         Segment::App => 80,
         Segment::Agents => 70,
+        Segment::AgentCount => 71,
         Segment::Plan => 65,
         Segment::Compactions => 62,
         Segment::Safety => 84,
         Segment::Elapsed => 50,
         Segment::Cwd => 90,
+        Segment::ProjectRoot => 73,
+        Segment::SessionId => 45,
         Segment::Status => 89,
+        Segment::HooksHealth | Segment::AppServerHealth => 58,
     }
 }
 
@@ -818,44 +961,101 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
     }
     if matches!(theme, Theme::Minimal) {
         return match segment {
-            Segment::Work | Segment::Context | Segment::RateLimits | Segment::Model => "\x1b[1m",
+            Segment::Work
+            | Segment::Context
+            | Segment::ContextRemaining
+            | Segment::ContextUsed
+            | Segment::RateLimits
+            | Segment::FiveHourLimit
+            | Segment::WeeklyLimit
+            | Segment::Model => "\x1b[1m",
             _ => "\x1b[2m",
         };
     }
     if matches!(theme, Theme::Inherit) {
         return match segment {
             Segment::App => "\x1b[1;32m",
-            Segment::Model | Segment::Agents | Segment::Tools | Segment::Tokens => "\x1b[36m",
+            Segment::Model
+            | Segment::Reasoning
+            | Segment::Agents
+            | Segment::AgentCount
+            | Segment::Tools
+            | Segment::Tokens
+            | Segment::InputTokens
+            | Segment::CachedTokens
+            | Segment::OutputTokens => "\x1b[36m",
             Segment::Work => "\x1b[1;33m",
-            Segment::Context => match snapshot.context_percent.unwrap_or(0) {
-                80..=u8::MAX => "\x1b[1;31m",
-                60..=79 => "\x1b[1;33m",
-                _ => "\x1b[32m",
-            },
-            Segment::RateLimits => "\x1b[1;33m",
-            Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => "\x1b[35m",
+            Segment::Context | Segment::ContextRemaining | Segment::ContextUsed => {
+                match snapshot.context_percent.unwrap_or(0) {
+                    80..=u8::MAX => "\x1b[1;31m",
+                    60..=79 => "\x1b[1;33m",
+                    _ => "\x1b[32m",
+                }
+            }
+            Segment::RateLimits
+            | Segment::FiveHourLimit
+            | Segment::WeeklyLimit
+            | Segment::ResetCredits => "\x1b[1;33m",
+            Segment::Git
+            | Segment::GitDirty
+            | Segment::GitStaged
+            | Segment::GitModified
+            | Segment::GitSync
+            | Segment::Worktree
+            | Segment::ProjectRoot
+            | Segment::Plan
+            | Segment::Compactions => "\x1b[35m",
             Segment::Safety => "\x1b[31m",
-            Segment::Elapsed | Segment::Cwd | Segment::Status => "\x1b[2m",
+            Segment::Elapsed
+            | Segment::Cwd
+            | Segment::ContextWindow
+            | Segment::SessionId
+            | Segment::Status
+            | Segment::HooksHealth
+            | Segment::AppServerHealth => "\x1b[2m",
         };
     }
     if matches!(theme, Theme::Ox96f) {
         return match segment {
             Segment::App => "\x1b[1m\x1b[38;2;179;224;58m",
-            Segment::Model | Segment::Agents | Segment::Tools | Segment::Tokens => {
-                "\x1b[38;2;0;205;232m"
-            }
+            Segment::Model
+            | Segment::Reasoning
+            | Segment::Agents
+            | Segment::AgentCount
+            | Segment::Tools
+            | Segment::Tokens
+            | Segment::InputTokens
+            | Segment::CachedTokens
+            | Segment::OutputTokens => "\x1b[38;2;0;205;232m",
             Segment::Work => "\x1b[1m\x1b[38;2;255;199;57m",
-            Segment::Context => match snapshot.context_percent.unwrap_or(0) {
-                80..=u8::MAX => "\x1b[1m\x1b[38;2;255;102;109m",
-                60..=79 => "\x1b[1m\x1b[38;2;255;199;57m",
-                _ => "\x1b[1m\x1b[38;2;179;224;58m",
-            },
-            Segment::RateLimits => "\x1b[1m\x1b[38;2;255;199;57m",
-            Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => {
-                "\x1b[38;2;163;146;232m"
+            Segment::Context | Segment::ContextRemaining | Segment::ContextUsed => {
+                match snapshot.context_percent.unwrap_or(0) {
+                    80..=u8::MAX => "\x1b[1m\x1b[38;2;255;102;109m",
+                    60..=79 => "\x1b[1m\x1b[38;2;255;199;57m",
+                    _ => "\x1b[1m\x1b[38;2;179;224;58m",
+                }
             }
+            Segment::RateLimits
+            | Segment::FiveHourLimit
+            | Segment::WeeklyLimit
+            | Segment::ResetCredits => "\x1b[1m\x1b[38;2;255;199;57m",
+            Segment::Git
+            | Segment::GitDirty
+            | Segment::GitStaged
+            | Segment::GitModified
+            | Segment::GitSync
+            | Segment::Worktree
+            | Segment::ProjectRoot
+            | Segment::Plan
+            | Segment::Compactions => "\x1b[38;2;163;146;232m",
             Segment::Safety => "\x1b[38;2;255;102;109m",
-            Segment::Elapsed | Segment::Cwd | Segment::Status => "\x1b[38;2;157;234;246m",
+            Segment::Elapsed
+            | Segment::Cwd
+            | Segment::ContextWindow
+            | Segment::SessionId
+            | Segment::Status
+            | Segment::HooksHealth
+            | Segment::AppServerHealth => "\x1b[38;2;157;234;246m",
         };
     }
     let dark = matches!(theme, Theme::CodexDark);
@@ -867,7 +1067,15 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
                 "\x1b[1m\x1b[38;2;17;128;82m"
             }
         }
-        Segment::Model | Segment::Agents | Segment::Tools | Segment::Tokens => {
+        Segment::Model
+        | Segment::Reasoning
+        | Segment::Agents
+        | Segment::AgentCount
+        | Segment::Tools
+        | Segment::Tokens
+        | Segment::InputTokens
+        | Segment::CachedTokens
+        | Segment::OutputTokens => {
             if dark {
                 "\x1b[38;2;139;233;253m"
             } else {
@@ -881,20 +1089,33 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
                 "\x1b[1m\x1b[38;2;154;103;0m"
             }
         }
-        Segment::Context => match snapshot.context_percent.unwrap_or(0) {
-            80..=u8::MAX => "\x1b[1m\x1b[38;2;243;123;131m",
-            60..=79 => "\x1b[1m\x1b[38;2;243;201;105m",
-            _ if dark => "\x1b[38;2;110;231;168m",
-            _ => "\x1b[38;2;17;128;82m",
-        },
-        Segment::RateLimits => {
+        Segment::Context | Segment::ContextRemaining | Segment::ContextUsed => {
+            match snapshot.context_percent.unwrap_or(0) {
+                80..=u8::MAX => "\x1b[1m\x1b[38;2;243;123;131m",
+                60..=79 => "\x1b[1m\x1b[38;2;243;201;105m",
+                _ if dark => "\x1b[38;2;110;231;168m",
+                _ => "\x1b[38;2;17;128;82m",
+            }
+        }
+        Segment::RateLimits
+        | Segment::FiveHourLimit
+        | Segment::WeeklyLimit
+        | Segment::ResetCredits => {
             if dark {
                 "\x1b[1m\x1b[38;2;243;201;105m"
             } else {
                 "\x1b[1m\x1b[38;2;154;103;0m"
             }
         }
-        Segment::Git | Segment::Worktree | Segment::Plan | Segment::Compactions => {
+        Segment::Git
+        | Segment::GitDirty
+        | Segment::GitStaged
+        | Segment::GitModified
+        | Segment::GitSync
+        | Segment::Worktree
+        | Segment::ProjectRoot
+        | Segment::Plan
+        | Segment::Compactions => {
             if dark {
                 "\x1b[38;2;196;167;231m"
             } else {
@@ -908,7 +1129,13 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
                 "\x1b[38;2;181;53;62m"
             }
         }
-        Segment::Elapsed | Segment::Cwd | Segment::Status => {
+        Segment::Elapsed
+        | Segment::Cwd
+        | Segment::ContextWindow
+        | Segment::SessionId
+        | Segment::Status
+        | Segment::HooksHealth
+        | Segment::AppServerHealth => {
             if dark {
                 "\x1b[2m\x1b[38;2;173;184;177m"
             } else {
@@ -920,8 +1147,11 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 
 #[cfg(test)]
 mod tests {
-    use super::{AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi, preview_line};
-    use crate::config::{DisplayConfig, Theme};
+    use super::{
+        AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi, preview_line,
+        status_layouts,
+    };
+    use crate::config::{DisplayConfig, Segment, Theme};
     use crate::state::StatusSnapshot;
     use std::sync::{Arc, RwLock};
     use unicode_width::UnicodeWidthStr;
@@ -946,6 +1176,58 @@ mod tests {
         let line = preview_line(120, &display);
         assert!(line.contains("8s :: ● Codex"));
         assert!(!line.contains("companion active"));
+    }
+
+    #[test]
+    fn granular_segments_render_real_snapshot_values() {
+        let display = DisplayConfig {
+            rows: 3,
+            segments: vec![
+                Segment::Reasoning,
+                Segment::ContextRemaining,
+                Segment::ContextWindow,
+                Segment::CachedTokens,
+                Segment::FiveHourLimit,
+                Segment::WeeklyLimit,
+                Segment::ResetCredits,
+                Segment::GitStaged,
+                Segment::GitModified,
+                Segment::GitSync,
+                Segment::ProjectRoot,
+                Segment::AgentCount,
+                Segment::SessionId,
+                Segment::HooksHealth,
+                Segment::AppServerHealth,
+            ],
+            ..DisplayConfig::default()
+        };
+        let snapshot = StatusSnapshot::showcase();
+        let text = status_layouts(300, &display, &snapshot, 8)
+            .into_iter()
+            .flatten()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>()
+            .join(" | ");
+
+        for expected in [
+            "reasoning high",
+            "ctx 58% left",
+            "window 200.0k",
+            "cache 51.2k",
+            "5H 66%",
+            "WEEK 35%",
+            "reset ×1",
+            "staged 1",
+            "modified 3",
+            "sync ↑2 ↓0",
+            "ROOT ~/pro/codex-cli-statusline",
+            "agents 2/3",
+            "thread thr_showcase",
+            "HOOK ✓",
+            "APP ✓",
+        ] {
+            assert!(text.contains(expected), "missing `{expected}` in `{text}`");
+        }
     }
 
     #[test]

@@ -108,9 +108,11 @@ available width. Set `CODEXLINE_CONFIG_LINEAR=1` for the accessible line-by-line
 fallback.
 
 The Modules section groups signals into **Core**, **Usage**, **Workspace**,
-**Activity**, and **Runtime**. `←/→` switches these compact categories,
-`↑/↓` moves through only the current category, and `Tab` returns to the main
-section navigation, so the editor never becomes one long scrolling checklist.
+**Activity**, and **Runtime**. All five columns and all modules remain visible at
+once; `←/→` moves between columns, `↑/↓` moves within one column, and the
+selected module's complete signal summary appears below the grid. `Tab` returns
+to the main section navigation, so discoverability does not depend on scrolling
+or opening hidden category pages.
 
 ### 1. Guided setup
 

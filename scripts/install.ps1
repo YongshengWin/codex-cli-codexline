@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Repository = "YongshengWin/codex-cli-codexline"
+$ShimDir = Join-Path $env:LOCALAPPDATA "Codexline\shim"
 
 $Architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
 switch ($Architecture) {
@@ -63,12 +64,21 @@ try {
         throw
     }
 
+    $Shim = Join-Path $ShimDir "codex.exe"
+    $ShimMarker = Join-Path $ShimDir ".codex.exe.codexline-owned"
+    if ((Test-Path $Shim) -and (Test-Path $ShimMarker) -and
+        ((Get-Content $ShimMarker -Raw) -eq "codexline-shim-v1`n")) {
+        Copy-Item -Force $Destination $Shim
+        Write-Host "Updated owned codex shim at $Shim"
+    }
+
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
     $PathEntries = @($UserPath -split ';' | Where-Object { $_ })
-    if ($PathEntries -notcontains $InstallDir) {
-        $UpdatedPath = (@($PathEntries) + $InstallDir) -join ';'
+    if (($PathEntries -notcontains $InstallDir) -or ($PathEntries -notcontains $ShimDir)) {
+        $Remaining = @($PathEntries | Where-Object { $_ -ne $InstallDir -and $_ -ne $ShimDir })
+        $UpdatedPath = (@($ShimDir, $InstallDir) + $Remaining) -join ';'
         [Environment]::SetEnvironmentVariable("Path", $UpdatedPath, "User")
-        Write-Host "Added $InstallDir to your user PATH. Open a new terminal before continuing."
+        Write-Host "Added $ShimDir and $InstallDir to your user PATH. Open a new terminal before continuing."
     }
 
     $InstalledVersion = & $Destination --version

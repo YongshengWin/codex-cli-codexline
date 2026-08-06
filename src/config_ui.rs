@@ -331,13 +331,22 @@ pub fn run(config: Config) -> Result<i32> {
         }
     };
 
-    match outcome {
-        Outcome::Save => editor.config.save_atomic()?,
-        Outcome::Cancel | Outcome::Continue => {}
-    }
+    let shim_outcome = match outcome {
+        Outcome::Save => {
+            let shim_outcome = crate::shim::reconcile(editor.config.launch.mode)?;
+            editor.config.save_atomic()?;
+            Some(shim_outcome)
+        }
+        Outcome::Cancel | Outcome::Continue => None,
+    };
     drop(screen);
     match outcome {
-        Outcome::Save => println!("Saved {}", crate::config::path()?.display()),
+        Outcome::Save => {
+            if let Some(shim_outcome) = &shim_outcome {
+                crate::cli::print_shim_outcome(shim_outcome);
+            }
+            println!("Saved {}", crate::config::path()?.display());
+        }
         Outcome::Cancel | Outcome::Continue => println!("No changes saved."),
     }
     Ok(0)
@@ -445,6 +454,9 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
             content_width,
             divider_y.saturating_sub(options_y),
         )?;
+        if editor.page == Page::Review {
+            draw_review_details(output, editor, 2, options_y + 3, content_width)?;
+        }
     }
     draw_preview_divider(output, editor, 2, divider_y, content_width)?;
     draw_preview(output, &preview_lines, 2, preview_y)?;
@@ -466,6 +478,42 @@ fn draw_full(output: &mut impl Write, editor: &Editor, columns: u16, rows: u16) 
         }),
         ResetColor
     )?;
+    Ok(())
+}
+
+fn draw_review_details(
+    output: &mut impl Write,
+    editor: &Editor,
+    x: u16,
+    y: u16,
+    width: u16,
+) -> Result<()> {
+    let shim = crate::config::suggested_shim_path()?;
+    let config = crate::config::path()?;
+    let details = match editor.config.launch.mode {
+        LaunchMode::Shim => vec![
+            "Launch   keep `codex` command".into(),
+            format!("Create   {}", shim.display()),
+            "Safety   owned shim only; official Codex is never overwritten".into(),
+            "Bypass   codex --no-companion".into(),
+            format!("Config   {}", config.display()),
+        ],
+        LaunchMode::Explicit => vec![
+            "Launch   explicit `codexline` command".into(),
+            format!("Remove   owned shim at {} (when present)", shim.display()),
+            "Safety   unrelated files are refused".into(),
+            format!("Config   {}", config.display()),
+        ],
+    };
+    for (offset, line) in details.iter().enumerate() {
+        queue!(
+            output,
+            MoveTo(x, y + offset as u16),
+            SetForegroundColor(Color::DarkGrey),
+            Print(truncate(line, width as usize)),
+            ResetColor
+        )?;
+    }
     Ok(())
 }
 

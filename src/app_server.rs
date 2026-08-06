@@ -499,10 +499,10 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
     }
     if let Some(request_id) = message.get("id").and_then(Value::as_str) {
         if let Some(session_id) = request_id.strip_prefix("codexline:root:") {
-            if snapshot.session_id.as_deref() == Some(session_id)
-                && let Some(turns) = message.pointer("/result/data").and_then(Value::as_array)
-            {
-                apply_parent_turns(turns, snapshot);
+            if snapshot.session_id.as_deref() == Some(session_id) {
+                if let Some(turns) = message.pointer("/result/data").and_then(Value::as_array) {
+                    apply_parent_turns(turns, snapshot);
+                }
             }
             return;
         }

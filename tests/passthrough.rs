@@ -1,5 +1,6 @@
 #![cfg(unix)]
 
+use std::os::unix::fs::symlink;
 use std::process::Command;
 
 use tempfile::tempdir;
@@ -57,4 +58,21 @@ fn invalid_config_never_blocks_codex() {
     assert!(output.status.success());
     assert_eq!(String::from_utf8_lossy(&output.stdout), "safe-fallback");
     assert!(String::from_utf8_lossy(&output.stderr).contains("ignoring invalid configuration"));
+}
+
+#[test]
+fn codex_named_shim_wraps_the_explicit_official_binary() {
+    let binary = env!("CARGO_BIN_EXE_codexline");
+    let directory = tempdir().unwrap();
+    let shim = directory.path().join("codex");
+    symlink(binary, &shim).unwrap();
+
+    let output = Command::new(shim)
+        .env("CODEXLINE_CODEX_BIN", "/bin/sh")
+        .args(["-c", "printf shim-ok"])
+        .output()
+        .expect("owned codex shim should launch the official fixture");
+
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "shim-ok");
 }

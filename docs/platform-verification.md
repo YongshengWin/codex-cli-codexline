@@ -10,7 +10,7 @@ never treated as a runtime verification.
 - Local interactive development host.
 - `cargo fmt --all -- --check` passed.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed.
-- 34 unit tests and 3 passthrough integration tests passed.
+- 53 unit tests, 4 passthrough/shim tests and 1 native PTY smoke test passed.
 - Release build and local Cargo installation passed.
 - Terminal.app and cmux behavior were manually exercised during development.
 
@@ -18,7 +18,7 @@ never treated as a runtime verification.
 
 - Native Debian 12 host with kernel 6.1 and glibc 2.36.
 - Rust 1.85.1, the declared minimum supported Rust version.
-- 34 unit tests and 3 passthrough integration tests passed.
+- 53 unit tests, 4 passthrough/shim tests and 1 native PTY smoke test passed.
 - `cargo build --release --locked` passed.
 - `codexline preview --width 100` rendered the full simulated HUD.
 - A 100×24 SSH TTY launched a fake Codex child through the POSIX PTY backend.
@@ -34,14 +34,15 @@ This run exposed Rust syntax newer than the declared 1.85 minimum. The let-chain
 expressions were rewritten and the complete suite then passed on Rust 1.85.1.
 CI now contains a dedicated MSRV job to prevent recurrence.
 
-### Windows target
+### Windows 10/11 x64
 
-- Rust 1.85.1 successfully checked the complete workspace for
-  `x86_64-pc-windows-gnu`.
-- This proves that `cfg(windows)` code and dependencies type-check for the
-  target.
-- It does **not** verify ConPTY startup, keyboard input, resize, Ctrl+C or
-  terminal restoration on a real Windows host.
+- GitHub Actions runs the complete workspace on a native `windows-latest` VM.
+- The integration suite opens the system `portable-pty` backend, starts a real
+  `cmd.exe` child through ConPTY, observes its marker and exit status.
+- Unit and passthrough tests also cover configuration, relay ordering, renderer
+  diffing, argument forwarding and owned-shim safety.
+- A manual Windows Terminal audit of keyboard input, resize, Ctrl+C and terminal
+  restoration is still pending and is not claimed as verified.
 
 ### WSL
 

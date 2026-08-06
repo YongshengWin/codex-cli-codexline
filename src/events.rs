@@ -229,14 +229,15 @@ fn apply_event(event: &Value, runtime: &mut RuntimeState, snapshot: &mut StatusS
             if tool == "update_plan" {
                 update_plan(event, snapshot);
             }
-            if is_spawn_agent_tool(tool)
-                && let Some(task_name) = event
+            if is_spawn_agent_tool(tool) {
+                if let Some(task_name) = event
                     .pointer("/tool_input/task_name")
                     .and_then(Value::as_str)
-            {
-                runtime
-                    .pending_agent_names
-                    .push_back(compact_agent(task_name));
+                {
+                    runtime
+                        .pending_agent_names
+                        .push_back(compact_agent(task_name));
+                }
             }
         }
         "PermissionRequest" => {

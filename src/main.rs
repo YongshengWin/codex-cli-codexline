@@ -6,6 +6,7 @@ mod events;
 mod native_status;
 mod process;
 mod render;
+mod shim;
 mod sources;
 mod state;
 

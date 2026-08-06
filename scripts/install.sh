@@ -5,6 +5,7 @@ set -eu
 repository="YongshengWin/codex-cli-codexline"
 version="${CODEXLINE_VERSION:-latest}"
 install_dir="${CODEXLINE_INSTALL_DIR:-${HOME}/.local/bin}"
+shim_dir="${XDG_DATA_HOME:-${HOME}/.local/share}/codexline/bin"
 
 command -v curl >/dev/null 2>&1 || {
     echo "codexline: curl is required" >&2
@@ -79,11 +80,11 @@ mv -f "${destination}.new" "${destination}"
 
 echo "Installed $("${destination}" --version) to ${destination}"
 case ":${PATH}:" in
-    *":${install_dir}:"*) ;;
+    *":${shim_dir}:"*":${install_dir}:"*) ;;
     *)
         echo
-        echo "Add Codexline to your PATH, then open a new terminal:"
-        echo "  export PATH=\"${install_dir}:\$PATH\""
+        echo "Add Codexline and its optional owned shim to your PATH, then open a new terminal:"
+        echo "  export PATH=\"${shim_dir}:${install_dir}:\$PATH\""
         ;;
 esac
 echo

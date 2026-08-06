@@ -297,9 +297,14 @@ pub fn path() -> Result<PathBuf> {
 pub fn suggested_shim_path() -> Result<PathBuf> {
     #[cfg(windows)]
     {
-        let project = ProjectDirs::from("dev", "codexline", "codexline")
+        let local = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .or_else(|| {
+                ProjectDirs::from("dev", "codexline", "codexline")
+                    .map(|p| p.data_local_dir().to_path_buf())
+            })
             .context("could not resolve the user data directory")?;
-        Ok(project.data_local_dir().join("bin").join("codex.exe"))
+        Ok(local.join("Codexline").join("shim").join("codex.exe"))
     }
     #[cfg(not(windows))]
     {

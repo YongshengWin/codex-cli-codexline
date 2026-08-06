@@ -92,16 +92,34 @@ pub struct AgentPanelState {
     selected: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AgentInputAction {
+    Forward,
+    Consumed,
+    OpenOfficialPicker,
+}
+
 impl AgentPanelState {
-    /// Returns true when the input belongs to the inspector and must not reach Codex.
-    pub fn handle_input(&mut self, input: &[u8], agent_count: usize) -> bool {
+    /// A short ambiguity window lets terminal escape sequences survive split stdin reads.
+    pub fn should_buffer_input(&self, input: &[u8]) -> bool {
+        if input.is_empty() || input.len() > 64 || input[0] != 0x1b {
+            return false;
+        }
+        if input.len() == 1 || input == b"\x1bO" {
+            return true;
+        }
+        input.starts_with(b"\x1b[") && !input[2..].iter().any(|byte| (0x40..=0x7e).contains(byte))
+    }
+
+    /// Routes input between Codex, the local inspector, and Codex's official `/agent` picker.
+    pub fn handle_input(&mut self, input: &[u8], agent_count: usize) -> AgentInputAction {
         if self.mode == AgentPanelMode::Passive {
             if contains_inspector_key(input, InspectorKey::Toggle) && agent_count > 0 {
                 self.mode = AgentPanelMode::List;
                 self.selected = self.selected.min(agent_count.saturating_sub(1));
-                return true;
+                return AgentInputAction::Consumed;
             }
-            return false;
+            return AgentInputAction::Forward;
         }
         let mut offset = 0;
         while offset < input.len() {
@@ -111,8 +129,12 @@ impl AgentPanelState {
                 InspectorKey::Down => {
                     self.selected = (self.selected + 1).min(agent_count.saturating_sub(1));
                 }
-                InspectorKey::Right | InspectorKey::Enter if agent_count > 0 => {
+                InspectorKey::Right if agent_count > 0 => {
                     self.mode = AgentPanelMode::Detail;
+                }
+                InspectorKey::Enter if agent_count > 0 => {
+                    self.mode = AgentPanelMode::Passive;
+                    return AgentInputAction::OpenOfficialPicker;
                 }
                 InspectorKey::Left | InspectorKey::Escape => self.back(),
                 InspectorKey::Toggle => self.mode = AgentPanelMode::Passive,
@@ -122,7 +144,7 @@ impl AgentPanelState {
             // Codex prompt. The decoder always consumes at least one byte.
             offset += consumed;
         }
-        true
+        AgentInputAction::Consumed
     }
 
     fn back(&mut self) {
@@ -325,7 +347,7 @@ fn agent_panel_layouts(
     let header = match panel.mode {
         AgentPanelMode::Passive => format!("AGENTS {active}/{total} · F2 inspect agents"),
         AgentPanelMode::List => format!(
-            "AGENT INSPECTOR {active}/{} · ↑↓/jk choose · →/Enter open · ←/Esc close",
+            "AGENT INSPECTOR {active}/{} · ↑↓/jk choose · → details · Enter /agent · ←/Esc close",
             total
         ),
         AgentPanelMode::Detail => {
@@ -1505,8 +1527,8 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
 #[cfg(test)]
 mod tests {
     use super::{
-        AgentPanelMode, AgentPanelState, StatusRenderer, agent_panel_layouts, preview_ansi,
-        preview_line, safety_text, status_layouts,
+        AgentInputAction, AgentPanelMode, AgentPanelState, StatusRenderer, agent_panel_layouts,
+        preview_ansi, preview_line, safety_text, status_layouts,
     };
     use crate::config::{DisplayConfig, Segment, Theme};
     use crate::state::{LiveProxyStatus, StatusSnapshot};
@@ -1732,13 +1754,22 @@ mod tests {
         assert!(passive[0][0].1.contains("F2 inspect agents"));
         assert!(passive.iter().any(|row| row[0].1.contains("explore")));
 
-        assert!(panel.handle_input(b"\x1bOQ", snapshot.agents.len()));
-        assert!(panel.handle_input(b"\x1b[1;1B\x1b[1;1C", snapshot.agents.len()));
+        assert_eq!(
+            panel.handle_input(b"\x1bOQ", snapshot.agents.len()),
+            AgentInputAction::Consumed
+        );
+        assert_eq!(
+            panel.handle_input(b"\x1b[1;1B\x1b[1;1C", snapshot.agents.len()),
+            AgentInputAction::Consumed
+        );
         let detail = agent_panel_layouts(100, &snapshot, panel);
         assert!(detail.iter().any(|row| row[0].1.starts_with("Goal")));
         assert!(detail.iter().any(|row| row[0].1.starts_with("Latest")));
 
-        assert!(panel.handle_input(b"\x1b[D", snapshot.agents.len()));
+        assert_eq!(
+            panel.handle_input(b"\x1b[D", snapshot.agents.len()),
+            AgentInputAction::Consumed
+        );
         let list = agent_panel_layouts(100, &snapshot, panel);
         assert!(list[0][0].1.contains("AGENT INSPECTOR"));
         assert!(list.iter().any(|row| row[0].1.starts_with("▶")));
@@ -1754,27 +1785,51 @@ mod tests {
             b"\x1b[57377;1:1u",
         ] {
             let mut panel = AgentPanelState::default();
-            assert!(panel.handle_input(f2, 2));
+            assert_eq!(panel.handle_input(f2, 2), AgentInputAction::Consumed);
         }
         let mut passive = AgentPanelState::default();
-        assert!(!passive.handle_input(&[0x07], 2));
-        assert!(!passive.handle_input(b"\x1b[103;5u", 2));
+        assert_eq!(passive.handle_input(&[0x07], 2), AgentInputAction::Forward);
+        assert_eq!(
+            passive.handle_input(b"\x1b[103;5u", 2),
+            AgentInputAction::Forward
+        );
+        assert!(passive.should_buffer_input(b"\x1b"));
+        assert!(passive.should_buffer_input(b"\x1b[57377"));
+        assert!(!passive.should_buffer_input(b"\x1b[57377u"));
     }
 
     #[test]
     fn inspector_navigates_with_kitty_arrows_and_jk_fallbacks() {
         let mut panel = AgentPanelState::default();
-        assert!(panel.handle_input(b"\x1b[57377u", 3));
-        assert!(panel.handle_input(b"\x1b[57353u", 3));
+        assert_eq!(
+            panel.handle_input(b"\x1b[57377u", 3),
+            AgentInputAction::Consumed
+        );
+        assert_eq!(
+            panel.handle_input(b"\x1b[57353u", 3),
+            AgentInputAction::Consumed
+        );
         assert_eq!(panel.selected, 1);
-        assert!(panel.handle_input(b"j", 3));
+        assert_eq!(panel.handle_input(b"j", 3), AgentInputAction::Consumed);
         assert_eq!(panel.selected, 2);
-        assert!(panel.handle_input(b"\x1b[57352;1:1u", 3));
+        assert_eq!(
+            panel.handle_input(b"\x1b[57352;1:1u", 3),
+            AgentInputAction::Consumed
+        );
         assert_eq!(panel.selected, 1);
-        assert!(panel.handle_input(b"k", 3));
+        assert_eq!(panel.handle_input(b"k", 3), AgentInputAction::Consumed);
         assert_eq!(panel.selected, 0);
-        assert!(panel.handle_input(b"\x1b[57345u", 3));
+        assert_eq!(
+            panel.handle_input(b"\x1b[57351u", 3),
+            AgentInputAction::Consumed
+        );
         assert_eq!(panel.mode, AgentPanelMode::Detail);
+
+        assert_eq!(
+            panel.handle_input(b"\x1b[D\x1b[57345u", 3),
+            AgentInputAction::OpenOfficialPicker
+        );
+        assert_eq!(panel.mode, AgentPanelMode::Passive);
     }
 
     #[test]

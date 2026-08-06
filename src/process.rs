@@ -151,15 +151,6 @@ struct VisibleOutput {
     state: EscapeState,
 }
 
-/// Extracts the small set of live values Codex renders in its own TUI. Codex does not emit a
-/// lifecycle hook when `/model` or `/permissions` changes, so the PTY stream is the only
-/// immediate, version-independent signal available to the safe sidecar.
-#[derive(Debug, Default)]
-struct CodexOutputObserver {
-    state: EscapeState,
-    text: Vec<u8>,
-}
-
 #[derive(Debug, Default)]
 enum EscapeState {
     #[default]
@@ -196,110 +187,6 @@ impl VisibleOutput {
         }
         visible
     }
-}
-
-impl CodexOutputObserver {
-    const MAX_TEXT: usize = 32 * 1024;
-
-    fn observe(&mut self, bytes: &[u8], snapshot: &Arc<RwLock<StatusSnapshot>>) {
-        for &byte in bytes {
-            self.state = match self.state {
-                EscapeState::Ground if byte == 0x1b => EscapeState::Escape,
-                EscapeState::Ground => {
-                    if byte.is_ascii_graphic() || byte == b' ' {
-                        self.text.push(byte);
-                    } else if matches!(byte, b'\r' | b'\n' | b'\t') {
-                        self.text.push(b' ');
-                    }
-                    EscapeState::Ground
-                }
-                EscapeState::Escape if byte == b'[' => EscapeState::Csi,
-                EscapeState::Escape if byte == b']' => EscapeState::Osc,
-                EscapeState::Escape => EscapeState::Ground,
-                EscapeState::Csi if (0x40..=0x7e).contains(&byte) => EscapeState::Ground,
-                EscapeState::Csi => EscapeState::Csi,
-                EscapeState::Osc if byte == 0x07 => EscapeState::Ground,
-                EscapeState::Osc if byte == 0x1b => EscapeState::OscEscape,
-                EscapeState::Osc => EscapeState::Osc,
-                EscapeState::OscEscape if byte == b'\\' => EscapeState::Ground,
-                EscapeState::OscEscape if byte == 0x1b => EscapeState::OscEscape,
-                EscapeState::OscEscape => EscapeState::Osc,
-            };
-        }
-        if self.text.len() > Self::MAX_TEXT {
-            let drain = self.text.len() - Self::MAX_TEXT;
-            self.text.drain(..drain);
-        }
-        let text = String::from_utf8_lossy(&self.text);
-        let Ok(mut snapshot) = snapshot.write() else {
-            return;
-        };
-        observe_permission_notice(&text, &mut snapshot);
-        observe_model_notice(&text, &mut snapshot);
-        observe_context_left(&text, &mut snapshot);
-    }
-}
-
-fn observe_permission_notice(text: &str, snapshot: &mut StatusSnapshot) {
-    let Some(notice) = text.rsplit("Permissions updated to ").next() else {
-        return;
-    };
-    if notice.starts_with("Full Access") {
-        snapshot.sandbox = Some("danger-full-access".into());
-        snapshot.permission_mode = None;
-    } else if notice.starts_with("Approve for me") {
-        snapshot.sandbox = Some("workspace-write".into());
-        snapshot.permission_mode = Some("approve for me".into());
-    } else if notice.starts_with("Read Only") {
-        snapshot.sandbox = Some("read-only".into());
-        snapshot.permission_mode = Some("ask".into());
-    } else {
-        return;
-    }
-    snapshot.settings_live = true;
-}
-
-fn observe_model_notice(text: &str, snapshot: &mut StatusSnapshot) {
-    let Some(notice) = text.rsplit("Model changed to ").next() else {
-        return;
-    };
-    let mut words = notice.split_ascii_whitespace();
-    let Some(model) = words.next().filter(|value| value.starts_with("gpt-")) else {
-        return;
-    };
-    snapshot.model = Some(
-        model
-            .trim_matches(|character: char| {
-                !character.is_ascii_alphanumeric() && character != '-' && character != '.'
-            })
-            .into(),
-    );
-    if let Some(reasoning) = words
-        .next()
-        .filter(|value| matches!(*value, "minimal" | "low" | "medium" | "high" | "xhigh"))
-    {
-        snapshot.reasoning = Some(reasoning.into());
-    }
-    snapshot.model_live = true;
-}
-
-fn observe_context_left(text: &str, snapshot: &mut StatusSnapshot) {
-    let Some(marker) = text.rfind("% context left") else {
-        return;
-    };
-    let digits = text[..marker]
-        .chars()
-        .rev()
-        .take_while(char::is_ascii_digit)
-        .collect::<String>()
-        .chars()
-        .rev()
-        .collect::<String>();
-    let Ok(left) = digits.parse::<u8>() else {
-        return;
-    };
-    snapshot.context_percent = Some(100_u8.saturating_sub(left.min(100)));
-    snapshot.context_live = true;
 }
 
 impl SynchronizedOutput {
@@ -505,41 +392,83 @@ fn prepare_pty(
     let interrupted = Arc::new(AtomicBool::new(false));
     let input_interrupted = Arc::clone(&interrupted);
     let input_trace = trace.clone();
-    // Detached deliberately: a blocking terminal read cannot be cancelled portably. The
-    // operating system tears it down when the short-lived wrapper process exits.
+    let input_reader_trace = trace.clone();
+    let (input_tx, input_rx) = mpsc::channel::<Vec<u8>>();
+    // Detached deliberately: a blocking terminal read cannot be cancelled portably. It only
+    // copies bytes into a short-lived router owned by this wrapper process.
     thread::spawn(move || {
         let mut stdin = io::stdin().lock();
         let mut buffer = [0_u8; 16 * 1024];
         loop {
             let count = match stdin.read(&mut buffer) {
                 Ok(0) => {
-                    if let Some(trace) = &input_trace {
+                    if let Some(trace) = &input_reader_trace {
                         trace.event("stdin_eof");
                     }
                     break;
                 }
                 Err(error) => {
-                    if let Some(trace) = &input_trace {
+                    if let Some(trace) = &input_reader_trace {
                         trace.event(format_args!("stdin_error kind={:?}", error.kind()));
                     }
                     break;
                 }
                 Ok(count) => count,
             };
+            if input_tx.send(buffer[..count].to_vec()).is_err() {
+                break;
+            }
+        }
+    });
+
+    // Terminal key sequences can be split across stdin reads. Buffer only an ambiguous escape
+    // prefix, and only for 8 ms; ordinary typing and Codex control keys remain zero-delay.
+    thread::spawn(move || {
+        let mut pending = Vec::new();
+        loop {
+            let (disconnected, timed_out) = match input_rx.recv_timeout(if pending.is_empty() {
+                Duration::from_millis(50)
+            } else {
+                Duration::from_millis(8)
+            }) {
+                Ok(bytes) => {
+                    pending.extend_from_slice(&bytes);
+                    (false, false)
+                }
+                Err(RecvTimeoutError::Timeout) if pending.is_empty() => continue,
+                Err(RecvTimeoutError::Timeout) => (false, true),
+                Err(RecvTimeoutError::Disconnected) if pending.is_empty() => break,
+                Err(RecvTimeoutError::Disconnected) => (true, false),
+            };
+            let should_buffer = !disconnected
+                && !timed_out
+                && !pending.contains(&0x03)
+                && agent_panel
+                    .lock()
+                    .is_ok_and(|panel| panel.should_buffer_input(&pending));
+            if should_buffer {
+                continue;
+            }
+            let bytes = std::mem::take(&mut pending);
             let agent_count = input_snapshot
                 .read()
                 .map_or(0, |snapshot| snapshot.agents.len());
-            let ctrl_c = buffer[..count].contains(&0x03);
-            let handled = !ctrl_c
-                && agent_panel.lock().map_or(true, |mut panel| {
-                    let previous = *panel;
-                    let handled = panel.handle_input(&buffer[..count], agent_count);
-                    if *panel != previous {
-                        input_agent_panel_changed.store(true, Ordering::Release);
-                    }
-                    handled
-                });
-            if handled {
+            let ctrl_c = bytes.contains(&0x03);
+            let input_action = if ctrl_c {
+                crate::render::AgentInputAction::Forward
+            } else {
+                agent_panel
+                    .lock()
+                    .map_or(crate::render::AgentInputAction::Consumed, |mut panel| {
+                        let previous = *panel;
+                        let action = panel.handle_input(&bytes, agent_count);
+                        if *panel != previous {
+                            input_agent_panel_changed.store(true, Ordering::Release);
+                        }
+                        action
+                    })
+            };
+            if input_action == crate::render::AgentInputAction::Consumed {
                 continue;
             }
             if ctrl_c {
@@ -552,10 +481,18 @@ fn prepare_pty(
             let Ok(mut writer) = input_writer.lock() else {
                 break;
             };
-            if writer.write_all(&buffer[..count]).is_err() || writer.flush().is_err() {
+            let forwarded = if input_action == crate::render::AgentInputAction::OpenOfficialPicker {
+                b"/agent\r".as_slice()
+            } else {
+                bytes.as_slice()
+            };
+            if writer.write_all(forwarded).is_err() || writer.flush().is_err() {
                 if let Some(trace) = &input_trace {
                     trace.event("pty_input_write_error");
                 }
+                break;
+            }
+            if disconnected {
                 break;
             }
         }
@@ -617,7 +554,6 @@ fn prepare_pty(
     let frame_interval = Duration::from_millis(1000 / u64::from(display.refresh_hz));
     let mut synchronized_output = SynchronizedOutput::default();
     let mut visible_output = VisibleOutput::default();
-    let mut codex_output = CodexOutputObserver::default();
     let mut interrupt_observed = None;
     let mut hud_invalidated = false;
     loop {
@@ -626,7 +562,6 @@ fn prepare_pty(
             Ok(Ok(bytes)) => {
                 synchronized_frame_ended = synchronized_output.observe(&bytes);
                 saw_visible_output |= visible_output.observe(&bytes);
-                codex_output.observe(&bytes, &snapshot);
                 last_child_output = std::time::Instant::now();
                 saw_any_child_output = true;
                 stdout
@@ -845,16 +780,10 @@ pub fn backend_name() -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        CodexOutputObserver, SynchronizedOutput, VisibleOutput, startup_hud_ready,
-        validate_candidate,
-    };
+    use super::{SynchronizedOutput, VisibleOutput, startup_hud_ready, validate_candidate};
     use std::fs;
-    use std::sync::{Arc, RwLock};
     use std::time::Duration;
     use tempfile::tempdir;
-
-    use crate::state::StatusSnapshot;
 
     #[test]
     fn rejects_non_executable_candidate() {
@@ -920,43 +849,5 @@ mod tests {
         assert!(!observer.observe(b"\x1b[?2004h\x1b]10;?"));
         assert!(!observer.observe(b"\x1b\\\x1b[6n"));
         assert!(observer.observe(b"\x1b[1mOpenAI Codex\x1b[0m"));
-    }
-
-    #[test]
-    fn codex_output_observer_tracks_runtime_menu_changes_and_context() {
-        let snapshot = Arc::new(RwLock::new(StatusSnapshot {
-            sandbox: Some("workspace-write".into()),
-            approval_policy: Some("on-request".into()),
-            ..StatusSnapshot::default()
-        }));
-        let mut observer = CodexOutputObserver::default();
-        observer.observe(
-            b"\x1b[33mPermissions updated to Full Access\x1b[0m",
-            &snapshot,
-        );
-        observer.observe(
-            b"Model changed to gpt-5.6-sol high\r\n\x1b[2m73% context left\x1b[0m",
-            &snapshot,
-        );
-        let snapshot = snapshot.read().unwrap();
-        assert_eq!(snapshot.sandbox.as_deref(), Some("danger-full-access"));
-        assert_eq!(snapshot.permission_mode, None);
-        assert!(snapshot.settings_live);
-        assert_eq!(snapshot.model.as_deref(), Some("gpt-5.6-sol"));
-        assert_eq!(snapshot.reasoning.as_deref(), Some("high"));
-        assert!(snapshot.model_live);
-        assert_eq!(snapshot.context_percent, Some(27));
-        assert!(snapshot.context_live);
-    }
-
-    #[test]
-    fn codex_output_observer_handles_split_permission_notice() {
-        let snapshot = Arc::new(RwLock::new(StatusSnapshot::default()));
-        let mut observer = CodexOutputObserver::default();
-        observer.observe(b"Permissions updated to Approve", &snapshot);
-        observer.observe(b" for me", &snapshot);
-        let snapshot = snapshot.read().unwrap();
-        assert_eq!(snapshot.sandbox.as_deref(), Some("workspace-write"));
-        assert_eq!(snapshot.permission_mode.as_deref(), Some("approve for me"));
     }
 }

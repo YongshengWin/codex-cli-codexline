@@ -38,12 +38,14 @@ Then open a new terminal and run:
 ```bash
 codexline config
 codexline doctor
-codexline
+codex
 ```
 
 That is the complete first-run flow: **install → configure → verify → start**.
-Codexline installs as a separate `codexline` command and never overwrites the
-official `codex` executable.
+Codexline installs as a separate `codexline` binary and never overwrites the
+official `codex` executable. The default configuration creates a symlink/copy
+named `codex` inside a Codexline-owned user directory; choosing **Explicit
+`codexline` command** removes only that owned shim.
 
 ### Updating an existing installation
 
@@ -69,6 +71,7 @@ configurations; existing theme choices are intentionally preserved.
 | `codexline preview` | Preview the HUD without starting Codex |
 | `codexline run -- <args>` | Forward arguments to the official Codex CLI |
 | `codexline run -- --no-companion` | Run official Codex without the HUD |
+| `codex --no-companion` | Bypass the HUD when the owned `codex` shim is active |
 
 ## 2. What it looks like
 
@@ -124,8 +127,9 @@ lost after the official CLI has attached cannot be hot-switched, so Codexline
 shows `LIVE !` instead of silently retaining stale values.
 
 When Codex exposes subagent activity, the Agent Inspector expands below the main
-HUD. Press `F2`, select an agent with `↑`/`↓` (or `j`/`k`), and press `Enter` to inspect
-its goal and latest available message. Unknown fields are omitted rather than
+HUD. Press `F2`, select with `↑`/`↓` (or `j`/`k`), and press `→` for the bounded
+goal/latest snapshot. Press `Enter` to open Codex's official `/agent` picker for
+the complete thread view and switching. Unknown fields are omitted rather than
 rendered as misleading zeroes.
 
 Other design choices:
@@ -135,7 +139,7 @@ Other design choices:
 - Native Codex footer detection and companion-scoped suppression
 - Direct fallback for pipes, CI, `TERM=dumb`, tiny terminals and explicit bypass
 - No tmux requirement and no patching of the Codex installation
-- No prompt, response, transcript or file-content collection
+- No prompt, response, transcript or file-content persistence or telemetry
 
 ## 4. Configure it
 
@@ -195,9 +199,10 @@ curl --proto '=https' --tlsv1.2 -fsSL \
   https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.sh | sh
 ```
 
-The native Apple Silicon or Intel binary is installed to `~/.local/bin`. If
-that directory is not already on `PATH`, the installer prints the exact export
-command to add to your shell profile.
+The native Apple Silicon or Intel binary is installed to `~/.local/bin`. The
+optional owned shim lives under `~/.local/share/codexline/bin` (or
+`$XDG_DATA_HOME/codexline/bin`). If either directory is missing from `PATH`, the
+installer prints one exact export command with the shim directory first.
 
 ### 5.2 Linux and WSL
 
@@ -218,15 +223,17 @@ Run in PowerShell without administrator privileges:
 irm https://raw.githubusercontent.com/YongshengWin/codex-cli-codexline/main/scripts/install.ps1 | iex
 ```
 
-The x64 executable is installed under `%LOCALAPPDATA%\Codexline\bin`; the
-installer adds that directory to the current user's `PATH`. Open a new terminal
-after the first installation. Native Windows uses ConPTY.
+The x64 executable is installed under `%LOCALAPPDATA%\Codexline\bin`; the owned
+shim uses `%LOCALAPPDATA%\Codexline\shim`. The installer prepends both directories
+to the current user's `PATH`. Open a new terminal after the first installation.
+Native Windows uses ConPTY.
 
 ### 5.4 Uninstall
 
 macOS / Linux / WSL:
 
 ```bash
+codexline config # choose "Explicit codexline command" to remove the owned shim
 rm "$HOME/.local/bin/codexline"
 ```
 
@@ -234,6 +241,7 @@ Windows PowerShell:
 
 ```powershell
 Remove-Item "$env:LOCALAPPDATA\Codexline\bin\codexline.exe"
+Remove-Item -Recurse -Force "$env:LOCALAPPDATA\Codexline\shim"
 ```
 
 You may also remove the now-empty directory from your user `PATH`.
@@ -265,14 +273,14 @@ release-hardening work.
 | macOS arm64 | POSIX PTY + ANSI | Tests, release build, installation and interactive terminal use |
 | Debian 12 x86_64 | POSIX PTY + ANSI | Rust 1.85.1 tests, release build, PTY, Ctrl+C, recovery and config TUI |
 | Other Linux | POSIX PTY + ANSI | Shared backend; broader distribution matrix pending |
-| Windows 10/11 x64 | ConPTY + VT | CI build/tests; real-host runtime test pending |
+| Windows 10/11 x64 | ConPTY + VT | CI build/tests and native ConPTY child smoke test; interactive keyboard/resize audit pending |
 | WSL | Linux PTY | Shared backend; Windows Terminal boundary test pending |
 | Pipes / CI / non-TTY | Direct fallback | Automated tests |
 
 See [platform verification](docs/platform-verification.md) for exact evidence.
-Automatic `codex` shim installation is not implemented yet; use the explicit
-`codexline` command. Rich live fields depend on the installed Codex version and
-enabled integration surfaces.
+The configuration flow installs or removes the owned `codex` shim atomically
+without touching the official executable. Rich live fields depend on the
+installed Codex version and enabled integration surfaces.
 
 ## 7. How it works
 
@@ -315,3 +323,6 @@ Issues and pull requests are welcome. Open an issue before changing PTY
 ownership, public configuration, integration protocols or updater trust.
 
 MIT licensed. See [`LICENSE`](LICENSE).
+
+Release history is in [`CHANGELOG.md`](CHANGELOG.md); private vulnerability
+reporting guidance is in [`SECURITY.md`](SECURITY.md).

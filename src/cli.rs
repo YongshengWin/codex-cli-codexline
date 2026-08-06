@@ -6,6 +6,7 @@ use crate::config::{self, Config, Glyphs, LaunchMode, Segment, SourcesConfig, Th
 use crate::native_status;
 use crate::process::{self, LaunchRequest};
 use crate::render;
+use crate::shim::{self, ShimOutcome};
 use crate::sources;
 
 #[derive(Debug, Parser)]
@@ -118,6 +119,17 @@ fn doctor() -> Result<i32> {
             .unwrap_or_else(|_| "<unknown>".into())
     );
     println!("  config: {}", config::path()?.display());
+    println!("  launch mode: {}", config.launch.mode);
+    let shim_path = config::suggested_shim_path()?;
+    println!(
+        "  codex shim: {} ({})",
+        shim_path.display(),
+        if shim_path.exists() {
+            "installed"
+        } else {
+            "not installed"
+        }
+    );
     println!("  theme: {}", theme_label(config.display.theme));
     println!(
         "  stdin/stdout TTY: {}/{}",
@@ -335,7 +347,7 @@ fn configure_linear() -> Result<i32> {
                 println!("  PATH requirement: prepend {}", directory.display());
             }
             println!("  bypass: codex --no-companion");
-            println!("  system changes: none in this development build");
+            println!("  system changes: install an owned, reversible shim");
         }
         LaunchMode::Explicit => println!("  planned shim: none"),
     }
@@ -345,11 +357,21 @@ fn configure_linear() -> Result<i32> {
         println!("No changes saved.");
         return Ok(0);
     }
+    let shim_outcome = shim::reconcile(config.launch.mode)?;
     config.save_atomic()?;
     let executable = std::env::current_exe().context("could not resolve the Codexline binary")?;
-    println!("Saved configuration; no shim was installed.");
+    print_shim_outcome(&shim_outcome);
+    println!("Saved configuration.");
     println!("Preview with: {} preview", executable.display());
     Ok(0)
+}
+
+pub(crate) fn print_shim_outcome(outcome: &ShimOutcome) {
+    match outcome {
+        ShimOutcome::Installed(path) => println!("Installed `codex` shim at {}", path.display()),
+        ShimOutcome::Removed(path) => println!("Removed Codexline shim at {}", path.display()),
+        ShimOutcome::Unchanged => {}
+    }
 }
 
 fn prompt(label: &str) -> Result<String> {

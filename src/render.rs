@@ -220,7 +220,7 @@ fn decode_inspector_key(input: &[u8]) -> (InspectorKey, usize) {
                 .and_then(|value| value.parse::<u32>().ok());
             let key = match (final_byte, codepoint) {
                 // Kitty's progressive keyboard protocol maps functional keys into its private
-                // Unicode range. cmux uses these forms after Codex enables enhanced reporting.
+                // Unicode range. Some terminals use these forms after enhanced reporting is enabled.
                 (b'u', Some(57_377)) => InspectorKey::Toggle, // F2
                 (b'u', Some(57_352)) => InspectorKey::Up,
                 (b'u', Some(57_353)) => InspectorKey::Down,

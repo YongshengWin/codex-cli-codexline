@@ -12,7 +12,7 @@ never treated as a runtime verification.
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings` passed.
 - 53 unit tests, 4 passthrough/shim tests and 1 native PTY smoke test passed.
 - Release build and local Cargo installation passed.
-- Terminal.app and cmux behavior were manually exercised during development.
+- Multiple terminal emulators were exercised manually during development.
 
 ### Debian 12 x86_64
 

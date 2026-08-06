@@ -77,9 +77,8 @@ Pastel Syntax 是新配置的默认主题，已有安装的主题选择会被保
 
 ![完整的 Codexline 键盘配置界面](assets/config-current.svg)
 
-以上均为隐私安全的高清矢量预览，不包含 cmux 边框、侧栏、标签或个人工作区
-信息。背景沿用终端主题，行数与字段会根据宽度、主题和 Codex 当前能够提供的
-数据自动调整。
+以上为界面示意图。Codexline 沿用当前终端背景，行数与字段会根据终端宽度、
+所选主题和 Codex 当前能够提供的数据自动调整。
 
 ## 3. Codexline 能展示什么
 
@@ -278,11 +277,11 @@ flowchart LR
 Codexline 从子终端高度中预留 HUD 行，并让 Codex 字节转发独立于 Git 探针和渲染。
 覆盖层无法安全使用时，会直接运行官方 Codex，保证主功能可用。
 
-## 8. 开发、Agent 与贡献
+## 8. 开发与贡献
 
-本仓库同时面向人类贡献者和编码 Agent，建议按顺序阅读：
+开始贡献前，建议按顺序阅读：
 
-1. [`AGENTS.md`](AGENTS.md) — 英文、中文、日文三语的强制协作规则。
+1. [`AGENTS.md`](AGENTS.md) — 英文、中文、日文三语的仓库协作约定。
 2. [`DESIGN.md`](DESIGN.md) — 架构、性能、兼容性和安全不变量。
 3. [`docs/adr`](docs/adr) — 已接受的架构决策。
 4. [`docs/platform-verification.md`](docs/platform-verification.md) — 声明与测试证据。

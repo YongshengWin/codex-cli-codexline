@@ -51,7 +51,7 @@
     <text x="424" y="616" fill="#77737d" font-size="19">│</text>
     <text x="448" y="616" fill="#d7aaff" font-size="19">wt codexline-agent-2 ↗</text>
     <text x="720" y="616" fill="#77737d" font-size="19">│</text>
-    <text x="744" y="616" fill="#00d7ef" font-size="19">DIR ~/pro/codex-cli-codexline</text>
+    <text x="744" y="616" fill="#00d7ef" font-size="19">DIR ~/project/codexline</text>
 
     <text x="46" y="650" fill="#a4df00" font-size="19" font-weight="700">CTX ▓▓▓░░ 58% 84.0k/200.0k</text>
     <text x="382" y="650" fill="#77737d" font-size="19">│</text>

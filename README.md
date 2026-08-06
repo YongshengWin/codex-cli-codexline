@@ -83,9 +83,9 @@ configurations; existing theme choices are intentionally preserved.
 
 ![Full keyboard-driven Codexline configuration interface](assets/config-current.svg)
 
-These are privacy-safe vector previews—no cmux chrome, sidebars, tabs or
-personal workspace data. The background follows the terminal; visible rows and
-fields adapt to width, theme and available Codex data.
+These are representative interface previews. Codexline keeps the current
+terminal background; visible rows and fields adapt to terminal width, the
+selected theme and available Codex data.
 
 ## 3. What Codexline adds
 
@@ -299,12 +299,11 @@ Codexline reserves HUD rows from the child terminal size and forwards Codex
 traffic independently from Git probes and rendering. If the overlay cannot be
 used safely, Codex remains available through direct execution.
 
-## 8. Development, agents and contribution
+## 8. Development and contribution
 
-This repository is designed to be readable by both humans and coding agents.
-Start in this order:
+Before contributing, start with:
 
-1. [`AGENTS.md`](AGENTS.md) — mandatory English/Chinese/Japanese working rules.
+1. [`AGENTS.md`](AGENTS.md) — repository conventions in English, Chinese and Japanese.
 2. [`DESIGN.md`](DESIGN.md) — architecture, performance, compatibility and safety invariants.
 3. [`docs/adr`](docs/adr) — accepted architecture decisions.
 4. [`docs/platform-verification.md`](docs/platform-verification.md) — claims and test evidence.

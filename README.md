@@ -104,15 +104,24 @@ Its health labels describe the actual source:
 | --- | --- |
 | `ACCOUNT` | Independent read-only app-server used for account limits only |
 | `HOOK` | The active Codex session has delivered a supported lifecycle event |
-| `LIVE` | Experimental protocol proxy is observing the active session directly |
+| `LIVE` | The loopback relay is observing the active Codex session directly |
+| `LIVE !` | Live startup or transport failed; stale live data is no longer shown |
 | `default` / `start` | Startup value; not yet confirmed by a runtime event |
 
 Model, reasoning and permission changes persisted by Codex are refreshed within
 about three seconds. Git/worktree state is also refreshed every three seconds
 off the PTY relay path. Hooks refresh model, directory, work and permission mode
 on the next supported event. Context and token values are hidden after a turn
-starts unless the active-session proxy supplies real usage; Codexline does not
-invent or scrape those values from terminal text.
+starts unless the active-session relay supplies `thread/tokenUsage/updated`;
+Codexline does not invent those values. The context bar uses the latest model
+request, while input/cache/output counters are cumulative for the session.
+
+Choose **Data → Live relay** in `codexline config` for exact active-session
+tokens, tools, plans, compactions and subagent events. It binds only to loopback
+and forwards unknown JSON-RPC methods unchanged. If app-server is unavailable
+before Codex launches, Codexline falls back to the normal session. A connection
+lost after the official CLI has attached cannot be hot-switched, so Codexline
+shows `LIVE !` instead of silently retaining stale values.
 
 When Codex exposes subagent activity, the Agent Inspector expands below the main
 HUD. Press `Ctrl+G`, select an agent with `↑`/`↓`, and press `Enter` to inspect

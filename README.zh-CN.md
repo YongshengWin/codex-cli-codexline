@@ -96,13 +96,21 @@ Codexline 不会把独立 sidecar 伪装成当前 Codex 会话。健康标签直
 | --- | --- |
 | `ACCOUNT` | 只用于账户额度的独立只读 app-server |
 | `HOOK` | 当前 Codex 会话已经送达受支持的生命周期事件 |
-| `LIVE` | 实验性协议代理正在直接观察当前会话 |
+| `LIVE` | 本机回环中继正在直接观察当前 Codex 会话 |
+| `LIVE !` | 实时启动或传输失败；不再继续展示过期实时数据 |
 | `default` / `start` | 启动值，尚未被运行时事件确认 |
 
 Codex 持久化模型、推理等级和权限选择后，Codexline 通常会在约三秒内刷新；Git 与
 worktree 也每三秒在 PTY 转发路径之外刷新。Hook 会在下一个受支持事件中刷新模型、
-目录、工作状态和权限模式。首轮开始后，如果当前会话代理没有提供真实用量，CTX 与
-Token 会隐藏；Codexline 不会编造数据，也不会通过抓取终端文本推断这些值。
+目录、工作状态和权限模式。首轮开始后，如果实时中继没有收到官方
+`thread/tokenUsage/updated`，CTX 与 Token 会隐藏，不会编造。上下文进度条表示最近
+一次模型请求，输入/缓存/输出 Token 则是当前会话的累计值。
+
+在 `codexline config` 中选择 **Data → Live relay**，即可获得当前会话的精确 Token、
+工具、计划、压缩和子代理事件。中继只监听本机回环地址，未知 JSON-RPC method 会
+原样转发。app-server 若在 Codex 启动前不可用，会自动回退到普通会话。官方 CLI
+连接成功后若传输中断，目前无法无损热切换，因此会明确显示 `LIVE !`，而不是悄悄
+保留旧值。
 
 Codex 暴露子代理活动时，Agent Inspector 会在主 HUD 下展开。按 `Ctrl+G` 聚焦，
 用 `↑`/`↓` 选择代理，再按 `Enter` 查看目标和最近一条可用消息。未知字段会被

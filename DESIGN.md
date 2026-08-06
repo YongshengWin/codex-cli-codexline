@@ -122,7 +122,7 @@ Named Pipe。消息上限 64 KiB，超限或 socket 不存在时丢弃并返回�
 
 Hooks 提供 session、cwd、model、permission mode、turn、tool 和 subagent 状态。
 
-### 5.2 增强层：app-server sidecar 与实验性透明代理
+### 5.2 增强层：app-server sidecar 与可选实时中继
 
 M3 同时提供独立、只读的 stdio app-server sidecar，以及显式选择后才启用的
 loopback WebSocket proxy。sidecar 是默认路径，只读取 `account/rateLimits/read` 和
@@ -131,8 +131,7 @@ context/token 来源。sidecar 不可用时保留 Hooks/本地探针，不能影
 
 proxy 让 TUI 与 Codexline 观察同一条 app-server thread 协议流，从而采纳
 `thread/tokenUsage/updated`，但它处于 Codex 的关键传输路径。建立会话后的连接重置
-可能终止官方 TUI，因此只作为带明确风险提示的实验选项提供；配置 schema v1 自动
-迁移到 v2 并关闭 proxy。
+可能终止官方 TUI，因此保持显式选择；配置 schema v1 自动迁移到 v2 并关闭 proxy。
 
 当当前 Codex 同时支持 `app-server` 和 `--remote`，且用户显式设置
 `sources.remote_proxy = true` 时，启用透明代理：
@@ -150,9 +149,15 @@ Codex TUI <-> codexline protocol proxy <-> codex app-server
 - `thread/tokenUsage/updated`
 
 未知 method 和字段必须原样转发并忽略。握手失败、协议不兼容或 app-server
-启动超时后，在 300 ms 内回退 Hooks 模式并正常启动普通 Codex。连接建立后的中断
-目前不能无损热切换回原生传输，所以配置器和 doctor 必须把该模式标记为
-experimental；它永远不能作为默认值或启动必需条件。
+启动超时后，在 Unix 800 ms、Windows 1500 ms 的有界窗口内回退 Hooks/sidecar
+模式并正常启动普通 Codex。中继对单方向同时施加 256 帧和 64 MiB 背压上限；
+`WouldBlock` 表示帧已进入 tungstenite 内部缓冲区，只有 `WriteBufferFull` 返回的帧
+才允许重新排队。Ping/Pong 在各自 hop 本地终止，Close 尽力传播。
+
+连接建立后的中断目前不能无损热切换回原生传输，因此 UI 必须明确显示 `LIVE !`
+并清除实时新鲜度；它不能作为启动必需条件。精确 token 只采纳当前连接收到的
+`thread/tokenUsage/updated`：进度条使用 `last.inputTokens`，Token 模块使用 `total`
+累计计数。
 
 ### 5.3 本地探针
 
@@ -402,7 +407,7 @@ refresh_hz = 8
 
 [sources]
 app_server = true # isolated read-only capacity sidecar
-remote_proxy = false # explicit experimental live-thread transport
+remote_proxy = false # explicit live-thread relay for exact active-session data
 
 [[layout.left]]
 module = "model"

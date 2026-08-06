@@ -1,5 +1,15 @@
 use std::time::Instant;
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LiveProxyStatus {
+    #[default]
+    Disabled,
+    Starting,
+    WaitingForCodex,
+    Connected,
+    Closed,
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentActivity {
     pub id: String,
@@ -64,6 +74,8 @@ pub struct StatusSnapshot {
     pub events_active: bool,
     pub app_server_active: bool,
     pub live_session_active: bool,
+    pub live_proxy_status: LiveProxyStatus,
+    pub live_proxy_error: Option<String>,
 }
 
 impl StatusSnapshot {
@@ -145,6 +157,8 @@ impl StatusSnapshot {
             events_active: true,
             app_server_active: true,
             live_session_active: true,
+            live_proxy_status: LiveProxyStatus::Connected,
+            live_proxy_error: None,
         }
     }
 }

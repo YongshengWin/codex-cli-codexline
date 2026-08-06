@@ -17,7 +17,7 @@ use crate::config::DisplayConfig;
 use crate::events::EventServer;
 use crate::render::{StatusRenderer, TerminalGuard};
 use crate::sources;
-use crate::state::StatusSnapshot;
+use crate::state::{LiveProxyStatus, StatusSnapshot};
 
 #[derive(Debug, Clone, Copy)]
 pub enum BypassReason {
@@ -440,9 +440,23 @@ fn prepare_pty(
     sources::start_local_refresh(Arc::clone(&snapshot));
     let event_server = EventServer::start(Arc::clone(&snapshot)).ok();
 
-    let proxy = remote_proxy
-        .then(|| ProtocolProxy::start(executable, Arc::clone(&snapshot)).ok())
-        .flatten();
+    let proxy = if remote_proxy {
+        match ProtocolProxy::start(executable, Arc::clone(&snapshot)) {
+            Ok(proxy) => Some(proxy),
+            Err(error) => {
+                if let Ok(mut state) = snapshot.write() {
+                    state.live_proxy_status = LiveProxyStatus::Closed;
+                    state.live_proxy_error = Some(format!("live startup failed: {error:#}"));
+                }
+                if let Some(trace) = &trace {
+                    trace.event(format_args!("protocol_proxy fallback error={error:#}"));
+                }
+                None
+            }
+        }
+    } else {
+        None
+    };
     if let Some(trace) = &trace {
         trace.event(format_args!("protocol_proxy active={}", proxy.is_some()));
     }

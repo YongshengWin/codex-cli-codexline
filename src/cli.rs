@@ -143,7 +143,7 @@ fn doctor() -> Result<i32> {
         match source_preset_number(&config.sources) {
             "1" => "safe sidecar (recommended)",
             "2" => "local only",
-            "3" => "experimental live proxy",
+            "3" => "live relay (exact active-session data)",
             _ => unreachable!(),
         }
     );
@@ -284,8 +284,8 @@ fn configure_linear() -> Result<i32> {
     println!("     Account limits, Hooks, and refreshed config/Git state.\n");
     println!("  2  Local only");
     println!("     Hooks and refreshed config/Git state; no account sidecar.\n");
-    println!("  3  Experimental live proxy");
-    println!("     Exact session events, but a WebSocket disconnect can terminate Codex.\n");
+    println!("  3  Live relay");
+    println!("     Exact active-session tokens, model, tools, plans, and agents.\n");
     let source_default = source_preset_number(&config.sources);
     let source = prompt(&format!("Choose [{source_default}]: "))?;
     apply_source_preset(
@@ -313,7 +313,7 @@ fn configure_linear() -> Result<i32> {
         match source_preset_number(&config.sources) {
             "1" => "safe sidecar",
             "2" => "local only",
-            "3" => "experimental live proxy",
+            "3" => "live relay (exact active-session data)",
             _ => unreachable!(),
         }
     );

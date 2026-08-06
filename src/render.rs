@@ -7,7 +7,7 @@ use crossterm::terminal;
 use unicode_width::UnicodeWidthStr;
 
 use crate::config::{DisplayConfig, Glyphs, Segment, Theme};
-use crate::state::StatusSnapshot;
+use crate::state::{LiveProxyStatus, StatusSnapshot};
 
 pub struct TerminalGuard {
     child_rows: std::cell::Cell<u16>,
@@ -630,7 +630,15 @@ fn segment_text(
             .session_id
             .as_deref()
             .map(|id| format!("thread {}", sanitize_dynamic(id))),
-        Segment::Status => Some(if snapshot.live_session_active && snapshot.events_active {
+        Segment::Status => Some(if snapshot.live_proxy_status == LiveProxyStatus::Closed {
+            if snapshot.app_server_active {
+                "ACCOUNT · LIVE !".into()
+            } else {
+                "LIVE !".into()
+            }
+        } else if snapshot.live_proxy_status == LiveProxyStatus::WaitingForCodex {
+            "LIVE …".into()
+        } else if snapshot.live_session_active && snapshot.events_active {
             "LIVE+HOOK ✓".into()
         } else if snapshot.live_session_active {
             "LIVE ✓".into()
@@ -648,13 +656,19 @@ fn segment_text(
         } else {
             "HOOK —".into()
         }),
-        Segment::AppServerHealth => Some(if snapshot.live_session_active {
-            "LIVE ✓".into()
-        } else if snapshot.app_server_active {
-            "ACCOUNT ✓".into()
-        } else {
-            "ACCOUNT —".into()
-        }),
+        Segment::AppServerHealth => {
+            Some(if snapshot.live_proxy_status == LiveProxyStatus::Closed {
+                "LIVE !".into()
+            } else if snapshot.live_proxy_status == LiveProxyStatus::WaitingForCodex {
+                "LIVE …".into()
+            } else if snapshot.live_session_active {
+                "LIVE ✓".into()
+            } else if snapshot.app_server_active {
+                "ACCOUNT ✓".into()
+            } else {
+                "ACCOUNT —".into()
+            })
+        }
     }
 }
 
@@ -1421,7 +1435,7 @@ mod tests {
         safety_text, status_layouts,
     };
     use crate::config::{DisplayConfig, Segment, Theme};
-    use crate::state::StatusSnapshot;
+    use crate::state::{LiveProxyStatus, StatusSnapshot};
     use std::sync::{Arc, RwLock};
     use unicode_width::UnicodeWidthStr;
 
@@ -1504,6 +1518,28 @@ mod tests {
         };
 
         assert_eq!(safety_text(&snapshot).as_deref(), Some("full access"));
+    }
+
+    #[test]
+    fn failed_live_source_is_visible_instead_of_looking_like_local_data() {
+        let display = DisplayConfig {
+            rows: 1,
+            segments: vec![Segment::Status, Segment::AppServerHealth],
+            ..DisplayConfig::default()
+        };
+        let snapshot = StatusSnapshot {
+            app_server_active: true,
+            live_proxy_status: LiveProxyStatus::Closed,
+            live_proxy_error: Some("connection reset".into()),
+            ..StatusSnapshot::default()
+        };
+        let text = status_layouts(80, &display, &snapshot, 8)
+            .into_iter()
+            .flatten()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>()
+            .join(" | ");
+        assert_eq!(text, "ACCOUNT · LIVE ! | LIVE !");
     }
 
     #[test]

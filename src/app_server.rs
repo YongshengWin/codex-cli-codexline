@@ -11,7 +11,10 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 use tungstenite::{Message, WebSocket, accept, client};
 
-use crate::state::{AgentActivity, RateLimitWindow, StatusSnapshot};
+use crate::state::{AgentActivity, LiveProxyStatus, RateLimitWindow, StatusSnapshot, ToolCount};
+
+const RELAY_MAX_MESSAGES: usize = 256;
+const RELAY_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 pub struct AppServerSource {
     child: Child,
@@ -126,6 +129,10 @@ pub struct ProtocolProxy {
 
 impl ProtocolProxy {
     pub fn start(executable: &Path, snapshot: Arc<RwLock<StatusSnapshot>>) -> Result<Self> {
+        if let Ok(mut state) = snapshot.write() {
+            state.live_proxy_status = LiveProxyStatus::Starting;
+            state.live_proxy_error = None;
+        }
         let listener =
             TcpListener::bind("127.0.0.1:0").context("could not bind Codexline protocol proxy")?;
         let proxy_address = listener.local_addr()?;
@@ -143,7 +150,15 @@ impl ProtocolProxy {
             .spawn()
             .context("could not start websocket app-server")?;
 
-        let deadline = Instant::now() + Duration::from_millis(300);
+        // App-server startup varies considerably on cold Windows/macOS launches. This wait is
+        // still bounded and occurs before Codex is told to use the relay, so failure can safely
+        // fall back to a normal native launch.
+        let startup_timeout = if cfg!(windows) {
+            Duration::from_millis(1_500)
+        } else {
+            Duration::from_millis(800)
+        };
+        let deadline = Instant::now() + startup_timeout;
         let upstream = loop {
             match connect_websocket(server_address, &upstream_url) {
                 Ok(socket) => break socket,
@@ -151,19 +166,35 @@ impl ProtocolProxy {
                 Err(error) => {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(error.context("app-server websocket was not ready within 300 ms"));
+                    if let Ok(mut state) = snapshot.write() {
+                        state.live_proxy_status = LiveProxyStatus::Closed;
+                        state.live_proxy_error = Some(format!(
+                            "app-server was not ready within {} ms",
+                            startup_timeout.as_millis()
+                        ));
+                    }
+                    return Err(error.context(format!(
+                        "app-server websocket was not ready within {} ms",
+                        startup_timeout.as_millis()
+                    )));
                 }
             }
         };
 
+        if let Ok(mut state) = snapshot.write() {
+            state.live_proxy_status = LiveProxyStatus::WaitingForCodex;
+        }
         thread::spawn(move || {
-            let Ok((downstream_stream, _)) = listener.accept() else {
-                return;
-            };
-            let Ok(downstream) = accept(downstream_stream) else {
-                return;
-            };
-            relay_protocol(downstream, upstream, snapshot);
+            let result = listener
+                .accept()
+                .context("Codex did not connect to the live relay")
+                .and_then(|(downstream_stream, _)| {
+                    accept(downstream_stream).context("Codex live relay handshake failed")
+                });
+            match result {
+                Ok(downstream) => relay_protocol(downstream, upstream, snapshot),
+                Err(error) => mark_proxy_closed(&snapshot, error.to_string()),
+            }
         });
 
         Ok(Self {
@@ -202,69 +233,143 @@ fn relay_protocol(
     if let Ok(mut state) = snapshot.write() {
         state.app_server_active = true;
         state.live_session_active = true;
+        state.live_proxy_status = LiveProxyStatus::Connected;
+        state.live_proxy_error = None;
     }
     let mut requests = HashMap::<String, String>::new();
-    let mut to_upstream = VecDeque::<Message>::new();
-    let mut to_downstream = VecDeque::<Message>::new();
-    loop {
+    let mut to_upstream = RelayQueue::default();
+    let mut to_downstream = RelayQueue::default();
+    let close_reason = loop {
         let mut progressed = false;
-        if to_upstream.len() < 256 {
+        if to_upstream.can_read() {
             match downstream.read() {
                 Ok(message) => {
                     progressed = true;
-                    observe_client_message(&message, &mut requests, &snapshot);
-                    to_upstream.push_back(message);
+                    match message {
+                        Message::Text(_) | Message::Binary(_) => {
+                            observe_client_message(&message, &mut requests, &snapshot);
+                            to_upstream.push(message);
+                        }
+                        Message::Close(frame) => {
+                            to_upstream.push(Message::Close(frame));
+                            break "Codex closed the live connection".to_owned();
+                        }
+                        // Tungstenite answers Ping on this hop automatically. Forwarding control
+                        // frames would create a second, unrelated heartbeat across the other hop.
+                        Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
+                    }
                 }
                 Err(error) if is_would_block(&error) => {}
-                Err(_) => break,
+                Err(tungstenite::Error::ConnectionClosed) => {
+                    break "Codex closed the live connection".to_owned();
+                }
+                Err(error) => break format!("Codex relay read failed: {error}"),
             }
         }
-        if to_downstream.len() < 256 {
+        if to_downstream.can_read() {
             match upstream.read() {
                 Ok(message) => {
                     progressed = true;
-                    observe_server_message(&message, &mut requests, &snapshot);
-                    to_downstream.push_back(message);
+                    match message {
+                        Message::Text(_) | Message::Binary(_) => {
+                            observe_server_message(&message, &mut requests, &snapshot);
+                            to_downstream.push(message);
+                        }
+                        Message::Close(frame) => {
+                            to_downstream.push(Message::Close(frame));
+                            break "Codex app-server closed the live connection".to_owned();
+                        }
+                        Message::Ping(_) | Message::Pong(_) | Message::Frame(_) => {}
+                    }
                 }
                 Err(error) if is_would_block(&error) => {}
-                Err(_) => break,
+                Err(tungstenite::Error::ConnectionClosed) => {
+                    break "Codex app-server closed the live connection".to_owned();
+                }
+                Err(error) => break format!("app-server relay read failed: {error}"),
             }
         }
-        if try_forward(&mut upstream, &mut to_upstream).unwrap_or(false) {
-            progressed = true;
+        match try_forward(&mut upstream, &mut to_upstream) {
+            Ok(wrote) => progressed |= wrote,
+            Err(error) => break format!("app-server relay write failed: {error}"),
         }
-        if try_forward(&mut downstream, &mut to_downstream).unwrap_or(false) {
-            progressed = true;
+        match try_forward(&mut downstream, &mut to_downstream) {
+            Ok(wrote) => progressed |= wrote,
+            Err(error) => break format!("Codex relay write failed: {error}"),
         }
-        if flush_nonblocking(&mut upstream).is_err() || flush_nonblocking(&mut downstream).is_err()
-        {
-            break;
+        if let Err(error) = flush_nonblocking(&mut upstream) {
+            break format!("app-server relay flush failed: {error}");
+        }
+        if let Err(error) = flush_nonblocking(&mut downstream) {
+            break format!("Codex relay flush failed: {error}");
         }
         if !progressed {
             thread::sleep(Duration::from_millis(1));
         }
+    };
+
+    // Best-effort close propagation. Never block the PTY owner while a broken peer drains.
+    let _ = try_forward(&mut upstream, &mut to_upstream);
+    let _ = try_forward(&mut downstream, &mut to_downstream);
+    let _ = flush_nonblocking(&mut upstream);
+    let _ = flush_nonblocking(&mut downstream);
+    mark_proxy_closed(&snapshot, close_reason);
+}
+
+#[derive(Default)]
+struct RelayQueue {
+    messages: VecDeque<Message>,
+    bytes: usize,
+}
+
+impl RelayQueue {
+    fn can_read(&self) -> bool {
+        self.messages.len() < RELAY_MAX_MESSAGES && self.bytes < RELAY_MAX_BYTES
+    }
+
+    fn push(&mut self, message: Message) {
+        self.bytes = self.bytes.saturating_add(message.len());
+        self.messages.push_back(message);
+    }
+
+    fn pop(&mut self) -> Option<Message> {
+        let message = self.messages.pop_front()?;
+        self.bytes = self.bytes.saturating_sub(message.len());
+        Some(message)
+    }
+
+    fn push_front(&mut self, message: Message) {
+        self.bytes = self.bytes.saturating_add(message.len());
+        self.messages.push_front(message);
     }
 }
 
 fn try_forward(
     socket: &mut WebSocket<TcpStream>,
-    queue: &mut VecDeque<Message>,
+    queue: &mut RelayQueue,
 ) -> Result<bool, tungstenite::Error> {
-    let Some(message) = queue.front().cloned() else {
+    let Some(message) = queue.pop() else {
         return Ok(false);
     };
     match socket.write(message) {
-        Ok(()) => {
-            queue.pop_front();
-            Ok(true)
-        }
-        Err(error)
-            if is_would_block(&error)
-                || matches!(error, tungstenite::Error::WriteBufferFull(_)) =>
-        {
+        Ok(()) => Ok(true),
+        // A WouldBlock from write means tungstenite retained the frame in its own buffer. It
+        // must not be re-enqueued here or the JSON-RPC request is sent twice.
+        Err(error) if is_would_block(&error) => Ok(true),
+        Err(tungstenite::Error::WriteBufferFull(message)) => {
+            queue.push_front(*message);
             Ok(false)
         }
         Err(error) => Err(error),
+    }
+}
+
+fn mark_proxy_closed(snapshot: &Arc<RwLock<StatusSnapshot>>, reason: String) {
+    if let Ok(mut state) = snapshot.write() {
+        state.app_server_active = false;
+        state.live_session_active = false;
+        state.live_proxy_status = LiveProxyStatus::Closed;
+        state.live_proxy_error = Some(reason);
     }
 }
 
@@ -304,6 +409,9 @@ fn observe_client_message(
 }
 
 fn apply_runtime_params(params: &Value, snapshot: &mut StatusSnapshot) {
+    if let Some(thread_id) = params.get("threadId").and_then(Value::as_str) {
+        snapshot.session_id = Some(thread_id.into());
+    }
     if let Some(model) = params.get("model").and_then(Value::as_str) {
         snapshot.model = Some(model.into());
         snapshot.model_live = true;
@@ -431,6 +539,8 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
                             .unwrap_or("agent");
                         upsert_agent(snapshot, id, kind, None);
                     }
+                } else if let Some(id) = thread.get("id").and_then(Value::as_str) {
+                    snapshot.session_id = Some(id.into());
                 }
             }
         }
@@ -441,16 +551,47 @@ fn apply_message(message: &Value, snapshot: &mut StatusSnapshot) {
                     .pointer("/params/status/type")
                     .and_then(Value::as_str),
             ) {
-                set_agent_status(snapshot, id, status, None);
+                if snapshot.session_id.as_deref() == Some(id) {
+                    snapshot.work = Some(
+                        match status {
+                            "active" => "working",
+                            "idle" => "ready",
+                            "systemError" => "error",
+                            "notLoaded" => "ended",
+                            other => other,
+                        }
+                        .into(),
+                    );
+                } else {
+                    set_agent_status(snapshot, id, status, None);
+                }
             }
         }
-        Some("item/started") | Some("item/completed") => {
+        Some("turn/started") => snapshot.work = Some("working".into()),
+        Some("turn/completed") => {
+            let status = message
+                .pointer("/params/turn/status")
+                .and_then(Value::as_str)
+                .unwrap_or("completed");
+            snapshot.work = Some(
+                match status {
+                    "completed" => "ready",
+                    "interrupted" => "interrupted",
+                    "failed" => "failed",
+                    other => other,
+                }
+                .into(),
+            );
+        }
+        Some("turn/plan/updated") => apply_live_plan(message, snapshot),
+        Some(method @ ("item/started" | "item/completed")) => {
             if let Some(item) = message.pointer("/params/item") {
                 apply_agent_item(
                     item,
                     message.pointer("/params/threadId").and_then(Value::as_str),
                     snapshot,
                 );
+                apply_live_item(item, method == "item/completed", snapshot);
             }
         }
         _ => {}
@@ -484,7 +625,9 @@ fn apply_stored_thread(thread: &Value, snapshot: &mut StatusSnapshot) {
         return;
     }
 
-    if snapshot.session_id.as_deref() != Some(thread_id) {
+    if snapshot.session_id.is_none() {
+        snapshot.session_id = Some(thread_id.into());
+    } else if snapshot.session_id.as_deref() != Some(thread_id) {
         return;
     }
     let Some(turns) = thread.get("turns").and_then(Value::as_array) else {
@@ -537,6 +680,24 @@ fn apply_agent_turns(thread_id: &str, turns: &[Value], snapshot: &mut StatusSnap
 
 fn apply_agent_item(item: &Value, thread_id: Option<&str>, snapshot: &mut StatusSnapshot) {
     match item.get("type").and_then(Value::as_str) {
+        Some("collabToolCall") => {
+            let prompt = item.get("prompt").and_then(Value::as_str);
+            let id = item
+                .get("newThreadId")
+                .or_else(|| item.get("receiverThreadId"))
+                .and_then(Value::as_str);
+            if let Some(id) = id {
+                let kind = item
+                    .pointer("/agentStatus/name")
+                    .or_else(|| item.pointer("/agentStatus/role"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("agent");
+                upsert_agent(snapshot, id, kind, prompt);
+                if let Some(status) = item.pointer("/agentStatus/status").and_then(Value::as_str) {
+                    set_agent_status(snapshot, id, status, None);
+                }
+            }
+        }
         Some("collabAgentToolCall") => {
             let prompt = item.get("prompt").and_then(Value::as_str);
             if let Some(receivers) = item.get("receiverThreadIds").and_then(Value::as_array) {
@@ -565,6 +726,83 @@ fn apply_agent_item(item: &Value, thread_id: Option<&str>, snapshot: &mut Status
         _ => {}
     }
     sync_agent_counts(snapshot);
+}
+
+fn apply_live_plan(message: &Value, snapshot: &mut StatusSnapshot) {
+    let Some(plan) = message.pointer("/params/plan").and_then(Value::as_array) else {
+        return;
+    };
+    snapshot.plan_completed = Some(
+        plan.iter()
+            .filter(|step| step.get("status").and_then(Value::as_str) == Some("completed"))
+            .count()
+            .min(usize::from(u16::MAX)) as u16,
+    );
+    snapshot.plan_total = Some(plan.len().min(usize::from(u16::MAX)) as u16);
+}
+
+fn apply_live_item(item: &Value, completed: bool, snapshot: &mut StatusSnapshot) {
+    let Some(item_type) = item.get("type").and_then(Value::as_str) else {
+        return;
+    };
+    if item_type == "contextCompaction" {
+        if completed {
+            snapshot.compactions = Some(snapshot.compactions.unwrap_or(0).saturating_add(1));
+            snapshot.work = Some("working".into());
+        } else {
+            snapshot.work = Some("compacting".into());
+        }
+        return;
+    }
+    let tool = match item_type {
+        "commandExecution" => Some("exec"),
+        "fileChange" => Some("patch"),
+        "webSearch" => Some("web"),
+        "collabToolCall" | "collabAgentToolCall" => Some("agent"),
+        "mcpToolCall" => item
+            .get("tool")
+            .and_then(Value::as_str)
+            .or_else(|| item.get("server").and_then(Value::as_str)),
+        "dynamicToolCall" => item.get("tool").and_then(Value::as_str),
+        _ => None,
+    };
+    let Some(tool) = tool.map(compact_protocol_label) else {
+        return;
+    };
+    if completed {
+        record_live_tool(snapshot, &tool);
+        snapshot.work = Some("working".into());
+    } else {
+        snapshot.work = Some(format!("running · {tool}"));
+    }
+}
+
+fn compact_protocol_label(value: &str) -> String {
+    value
+        .rsplit(['/', '_'])
+        .find(|part| !part.is_empty())
+        .unwrap_or(value)
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(20)
+        .collect()
+}
+
+fn record_live_tool(snapshot: &mut StatusSnapshot, tool: &str) {
+    let count = snapshot
+        .tools
+        .iter()
+        .find(|entry| entry.name == tool)
+        .map_or(1, |entry| entry.count.saturating_add(1));
+    snapshot.tools.retain(|entry| entry.name != tool);
+    snapshot.tools.insert(
+        0,
+        ToolCount {
+            name: tool.into(),
+            count,
+        },
+    );
+    snapshot.tools.truncate(4);
 }
 
 fn upsert_agent(snapshot: &mut StatusSnapshot, id: &str, kind: &str, prompt: Option<&str>) {
@@ -650,12 +888,15 @@ fn parse_window(value: &Value) -> Option<RateLimitWindow> {
 fn apply_token_usage(value: &Value, snapshot: &mut StatusSnapshot) {
     snapshot.context_window = value.get("modelContextWindow").and_then(Value::as_u64);
     let last = value.get("last").unwrap_or(value);
-    snapshot.input_tokens = last.get("inputTokens").and_then(Value::as_u64);
+    let total = value.get("total").unwrap_or(last);
     // Codex's native "context left" is based on the current input context. totalTokens also
     // includes generated output and can overstate pressure relative to the model window.
-    snapshot.context_used = snapshot.input_tokens;
-    snapshot.cached_input_tokens = last.get("cachedInputTokens").and_then(Value::as_u64);
-    snapshot.output_tokens = last.get("outputTokens").and_then(Value::as_u64);
+    snapshot.context_used = last.get("inputTokens").and_then(Value::as_u64);
+    // Token counters are cumulative for the session; the context bar intentionally remains the
+    // most recent model request. Those are separate concepts in the official protocol.
+    snapshot.input_tokens = total.get("inputTokens").and_then(Value::as_u64);
+    snapshot.cached_input_tokens = total.get("cachedInputTokens").and_then(Value::as_u64);
+    snapshot.output_tokens = total.get("outputTokens").and_then(Value::as_u64);
     snapshot.context_percent = match (snapshot.context_used, snapshot.context_window) {
         (Some(used), Some(window)) if window > 0 => Some(
             (used
@@ -671,9 +912,148 @@ fn apply_token_usage(value: &Value, snapshot: &mut StatusSnapshot) {
 
 #[cfg(test)]
 mod tests {
-    use super::{apply_message, apply_runtime_params};
+    use super::{
+        RELAY_MAX_BYTES, RELAY_MAX_MESSAGES, RelayQueue, apply_message, apply_runtime_params,
+        relay_protocol,
+    };
     use crate::state::StatusSnapshot;
-    use serde_json::json;
+    use serde_json::{Value, json};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::{Arc, RwLock, mpsc};
+    use std::thread;
+    use std::time::Duration;
+    use tungstenite::{Message, WebSocket, accept, client};
+
+    fn websocket_pair() -> (WebSocket<TcpStream>, WebSocket<TcpStream>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let (sender, receiver) = mpsc::channel();
+        thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            sender.send(accept(stream).unwrap()).unwrap();
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let (client_socket, _) = client(format!("ws://{address}"), stream).unwrap();
+        let server_socket = receiver.recv_timeout(Duration::from_secs(1)).unwrap();
+        (client_socket, server_socket)
+    }
+
+    #[test]
+    fn live_relay_forwards_each_rpc_once_and_observes_token_events() {
+        let (mut tui, downstream) = websocket_pair();
+        let (upstream, mut app_server) = websocket_pair();
+        tui.get_mut()
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+        app_server
+            .get_mut()
+            .set_read_timeout(Some(Duration::from_secs(1)))
+            .unwrap();
+
+        let snapshot = Arc::new(RwLock::new(StatusSnapshot::default()));
+        let relay_snapshot = Arc::clone(&snapshot);
+        let relay = thread::spawn(move || relay_protocol(downstream, upstream, relay_snapshot));
+
+        let request = json!({"id": 30, "method": "turn/start", "params": {
+            "threadId": "thr_1", "model": "gpt-live", "effort": "high",
+            "cwd": "/tmp/project", "approvalPolicy": "never"
+        }});
+        tui.send(Message::text(request.to_string())).unwrap();
+        assert_eq!(
+            app_server.read().unwrap().to_text().unwrap(),
+            request.to_string()
+        );
+
+        let notification = json!({"method": "thread/tokenUsage/updated", "params": {
+            "tokenUsage": {"modelContextWindow": 200000, "last": {
+                "inputTokens": 42000, "cachedInputTokens": 12000, "outputTokens": 3000
+            }}
+        }});
+        app_server
+            .send(Message::text(notification.to_string()))
+            .unwrap();
+        assert_eq!(
+            tui.read().unwrap().to_text().unwrap(),
+            notification.to_string()
+        );
+
+        let state = snapshot.read().unwrap();
+        assert_eq!(state.model.as_deref(), Some("gpt-live"));
+        assert_eq!(state.context_percent, Some(21));
+        assert_eq!(state.input_tokens, Some(42000));
+        assert_eq!(state.output_tokens, Some(3000));
+        drop(state);
+
+        tui.close(None).unwrap();
+        relay.join().unwrap();
+    }
+
+    #[test]
+    fn live_relay_preserves_order_during_a_bidirectional_burst() {
+        const FRAMES: usize = 512;
+        let (mut tui, downstream) = websocket_pair();
+        let (upstream, mut app_server) = websocket_pair();
+        tui.get_mut()
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        app_server
+            .get_mut()
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let snapshot = Arc::new(RwLock::new(StatusSnapshot::default()));
+        let relay = thread::spawn(move || relay_protocol(downstream, upstream, snapshot));
+
+        for id in 0..FRAMES {
+            tui.write(Message::text(format!(
+                r#"{{"id":{id},"method":"test/echo","params":{{"value":{id}}}}}"#
+            )))
+            .unwrap();
+        }
+        tui.flush().unwrap();
+        for id in 0..FRAMES {
+            let message = app_server.read().unwrap();
+            let value: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+            assert_eq!(value["id"], id);
+            app_server
+                .write(Message::text(format!(r#"{{"id":{id},"result":{id}}}"#)))
+                .unwrap();
+        }
+        app_server.flush().unwrap();
+        for id in 0..FRAMES {
+            let message = tui.read().unwrap();
+            let value: Value = serde_json::from_str(message.to_text().unwrap()).unwrap();
+            assert_eq!(value["id"], id);
+            assert_eq!(value["result"], id);
+        }
+
+        tui.close(None).unwrap();
+        relay.join().unwrap();
+    }
+
+    #[test]
+    fn relay_queue_tracks_bytes_and_preserves_order() {
+        let mut queue = RelayQueue::default();
+        queue.push(Message::text("first"));
+        queue.push(Message::binary(vec![1, 2, 3]));
+        assert_eq!(queue.bytes, 8);
+        assert_eq!(queue.pop(), Some(Message::text("first")));
+        assert_eq!(queue.bytes, 3);
+        assert_eq!(queue.pop(), Some(Message::binary(vec![1, 2, 3])));
+        assert_eq!(queue.bytes, 0);
+    }
+
+    #[test]
+    fn relay_queue_applies_message_and_byte_backpressure() {
+        let mut by_count = RelayQueue::default();
+        for _ in 0..RELAY_MAX_MESSAGES {
+            by_count.push(Message::text("x"));
+        }
+        assert!(!by_count.can_read());
+
+        let mut by_bytes = RelayQueue::default();
+        by_bytes.push(Message::binary(vec![0; RELAY_MAX_BYTES]));
+        assert!(!by_bytes.can_read());
+    }
 
     #[test]
     fn parses_rate_limits_and_token_usage_without_requiring_all_fields() {
@@ -691,12 +1071,15 @@ mod tests {
         apply_message(
             &json!({"method": "thread/tokenUsage/updated", "params": {"tokenUsage": {
                 "modelContextWindow": 200000,
+                "total": {"totalTokens": 90000, "inputTokens": 70000, "cachedInputTokens": 50000, "outputTokens": 20000},
                 "last": {"totalTokens": 50000, "inputTokens": 40000, "cachedInputTokens": 30000, "outputTokens": 10000}
             }}}),
             &mut snapshot,
         );
         assert_eq!(snapshot.context_percent, Some(20));
-        assert_eq!(snapshot.output_tokens, Some(10000));
+        assert_eq!(snapshot.context_used, Some(40000));
+        assert_eq!(snapshot.input_tokens, Some(70000));
+        assert_eq!(snapshot.output_tokens, Some(20000));
     }
 
     #[test]
@@ -732,6 +1115,56 @@ mod tests {
         assert_eq!(
             snapshot.agents[0].message.as_deref(),
             Some("Found the layout")
+        );
+    }
+
+    #[test]
+    fn live_events_drive_work_tools_plans_compactions_and_modern_agents() {
+        let mut snapshot = StatusSnapshot::default();
+        apply_message(
+            &json!({"method": "turn/plan/updated", "params": {"plan": [
+                {"step": "inspect", "status": "completed"},
+                {"step": "fix", "status": "inProgress"}
+            ]}}),
+            &mut snapshot,
+        );
+        apply_message(
+            &json!({"method": "item/started", "params": {"threadId": "root", "item": {
+                "type": "commandExecution", "id": "cmd", "command": "cargo test"
+            }}}),
+            &mut snapshot,
+        );
+        assert_eq!(snapshot.work.as_deref(), Some("running · exec"));
+        apply_message(
+            &json!({"method": "item/completed", "params": {"threadId": "root", "item": {
+                "type": "commandExecution", "id": "cmd", "status": "completed"
+            }}}),
+            &mut snapshot,
+        );
+        apply_message(
+            &json!({"method": "item/completed", "params": {"threadId": "root", "item": {
+                "type": "contextCompaction", "id": "compact"
+            }}}),
+            &mut snapshot,
+        );
+        apply_message(
+            &json!({"method": "item/completed", "params": {"threadId": "root", "item": {
+                "type": "collabToolCall", "id": "agent-call", "tool": "spawnAgent",
+                "newThreadId": "child-1", "prompt": "Review the relay",
+                "agentStatus": {"status": "running", "name": "reviewer"}
+            }}}),
+            &mut snapshot,
+        );
+
+        assert_eq!(snapshot.plan_completed, Some(1));
+        assert_eq!(snapshot.plan_total, Some(2));
+        assert_eq!(snapshot.tools[0].name, "agent");
+        assert!(snapshot.tools.iter().any(|tool| tool.name == "exec"));
+        assert_eq!(snapshot.compactions, Some(1));
+        assert_eq!(snapshot.agents[0].kind, "reviewer");
+        assert_eq!(
+            snapshot.agents[0].prompt.as_deref(),
+            Some("Review the relay")
         );
     }
 

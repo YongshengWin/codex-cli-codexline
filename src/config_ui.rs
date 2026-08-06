@@ -661,7 +661,7 @@ fn option_lines(editor: &Editor) -> Vec<(String, bool)> {
         Page::Sources => [
             "Safe · account + hooks + refreshed local state · recommended",
             "Local · hooks + refreshed local state",
-            "Live proxy · exact session events · may disconnect Codex",
+            "Live relay · exact active-session tokens, tools, plans, agents",
         ]
         .into_iter()
         .enumerate()
@@ -845,7 +845,7 @@ fn source_index(sources: &SourcesConfig) -> usize {
 }
 
 fn source_name(sources: &SourcesConfig) -> &'static str {
-    ["Safe sidecar", "Local only", "Experimental proxy"][source_index(sources)]
+    ["Safe sidecar", "Local only", "Live relay"][source_index(sources)]
 }
 
 fn theme_index(theme: Theme) -> usize {

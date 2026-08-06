@@ -352,8 +352,9 @@ East Asian Width 计算，不能用字符串字节数。
 - `unicode`：默认，使用常见符号和 block bar。
 - `nerd-font`：显式启用，不自动猜字体。
 
-内置主题至少包括默认的 `inherit`、`codex-dark`、`codex-light`、`minimal`、
-`mono` 和 `powerline`。`inherit` 不输出背景色，使用终端调色板保持与 Codex
+内置主题至少包括默认的 `inherit`、`ox96f`、`tokyo-night`、`catppuccin-mocha`、
+`dracula`、`nord`、`gruvbox`、`rose-pine`、`codex-dark`、`codex-light`、`minimal`、
+`mono`。`inherit` 不输出背景色，使用终端调色板保持与 Codex
 及用户主题一致；固定背景主题仅在显式选择时启用。默认主题优先可读性，不使用
 连续动画和大量 emoji。
 

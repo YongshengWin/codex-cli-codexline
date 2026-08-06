@@ -231,6 +231,12 @@ fn configure_linear() -> Result<i32> {
     println!("  4  Codex Light");
     println!("  5  Minimal");
     println!("  6  Mono");
+    println!("  7  Tokyo Night (transparent)");
+    println!("  8  Catppuccin Mocha (transparent)");
+    println!("  9  Dracula (transparent)");
+    println!(" 10  Nord (transparent)");
+    println!(" 11  Gruvbox (transparent)");
+    println!(" 12  Rosé Pine (transparent)");
     let theme_default = theme_number(config.display.theme);
     let theme = prompt(&format!("Theme [{theme_default}]: "))?;
     config.display.theme = match if theme.is_empty() {
@@ -244,7 +250,13 @@ fn configure_linear() -> Result<i32> {
         "4" => Theme::CodexLight,
         "5" => Theme::Minimal,
         "6" => Theme::Mono,
-        _ => anyhow::bail!("expected a theme from 1 to 6; no changes were saved"),
+        "7" => Theme::TokyoNight,
+        "8" => Theme::CatppuccinMocha,
+        "9" => Theme::Dracula,
+        "10" => Theme::Nord,
+        "11" => Theme::Gruvbox,
+        "12" => Theme::RosePine,
+        _ => anyhow::bail!("expected a theme from 1 to 12; no changes were saved"),
     };
     let glyph_default = match config.display.glyphs {
         Glyphs::Unicode => "1",
@@ -555,6 +567,12 @@ fn theme_number(theme: Theme) -> &'static str {
         Theme::CodexLight => "4",
         Theme::Minimal => "5",
         Theme::Mono => "6",
+        Theme::TokyoNight => "7",
+        Theme::CatppuccinMocha => "8",
+        Theme::Dracula => "9",
+        Theme::Nord => "10",
+        Theme::Gruvbox => "11",
+        Theme::RosePine => "12",
     }
 }
 

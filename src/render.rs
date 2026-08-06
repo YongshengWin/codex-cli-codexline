@@ -937,7 +937,14 @@ fn fit(mut text: String, width: usize) -> String {
 
 fn theme_base(theme: Theme) -> &'static str {
     match theme {
-        Theme::Inherit | Theme::Ox96f => "\x1b[0m",
+        Theme::Inherit
+        | Theme::Ox96f
+        | Theme::TokyoNight
+        | Theme::CatppuccinMocha
+        | Theme::Dracula
+        | Theme::Nord
+        | Theme::Gruvbox
+        | Theme::RosePine => "\x1b[0m",
         Theme::CodexDark => "\x1b[0m\x1b[48;2;17;20;22m\x1b[38;2;214;222;217m",
         Theme::CodexLight => "\x1b[0m\x1b[48;2;238;242;239m\x1b[38;2;35;42;38m",
         Theme::Minimal | Theme::Mono => "\x1b[0m",
@@ -945,6 +952,9 @@ fn theme_base(theme: Theme) -> &'static str {
 }
 
 fn theme_separator(theme: Theme) -> &'static str {
+    if let Some(palette) = color_palette(theme) {
+        return palette.muted;
+    }
     match theme {
         Theme::Inherit => "\x1b[2m",
         Theme::Ox96f => "\x1b[38;2;84;84;82m",
@@ -952,6 +962,138 @@ fn theme_separator(theme: Theme) -> &'static str {
         Theme::CodexLight => "\x1b[38;2;153;164;157m",
         Theme::Minimal => "\x1b[2m",
         Theme::Mono => "",
+        Theme::TokyoNight
+        | Theme::CatppuccinMocha
+        | Theme::Dracula
+        | Theme::Nord
+        | Theme::Gruvbox
+        | Theme::RosePine => unreachable!(),
+    }
+}
+
+#[derive(Clone, Copy)]
+struct ColorPalette {
+    app: &'static str,
+    info: &'static str,
+    work: &'static str,
+    ok: &'static str,
+    warn: &'static str,
+    danger: &'static str,
+    git: &'static str,
+    muted: &'static str,
+}
+
+fn color_palette(theme: Theme) -> Option<ColorPalette> {
+    Some(match theme {
+        Theme::TokyoNight => ColorPalette {
+            app: "\x1b[1m\x1b[38;2;158;206;106m",
+            info: "\x1b[38;2;125;207;255m",
+            work: "\x1b[1m\x1b[38;2;224;175;104m",
+            ok: "\x1b[38;2;158;206;106m",
+            warn: "\x1b[1m\x1b[38;2;224;175;104m",
+            danger: "\x1b[1m\x1b[38;2;247;118;142m",
+            git: "\x1b[38;2;187;154;247m",
+            muted: "\x1b[38;2;86;95;137m",
+        },
+        Theme::CatppuccinMocha => ColorPalette {
+            app: "\x1b[1m\x1b[38;2;166;227;161m",
+            info: "\x1b[38;2;116;199;236m",
+            work: "\x1b[1m\x1b[38;2;249;226;175m",
+            ok: "\x1b[38;2;166;227;161m",
+            warn: "\x1b[1m\x1b[38;2;249;226;175m",
+            danger: "\x1b[1m\x1b[38;2;243;139;168m",
+            git: "\x1b[38;2;203;166;247m",
+            muted: "\x1b[38;2;108;112;134m",
+        },
+        Theme::Dracula => ColorPalette {
+            app: "\x1b[1m\x1b[38;2;80;250;123m",
+            info: "\x1b[38;2;139;233;253m",
+            work: "\x1b[1m\x1b[38;2;241;250;140m",
+            ok: "\x1b[38;2;80;250;123m",
+            warn: "\x1b[1m\x1b[38;2;241;250;140m",
+            danger: "\x1b[1m\x1b[38;2;255;85;85m",
+            git: "\x1b[38;2;189;147;249m",
+            muted: "\x1b[38;2;98;114;164m",
+        },
+        Theme::Nord => ColorPalette {
+            app: "\x1b[1m\x1b[38;2;163;190;140m",
+            info: "\x1b[38;2;136;192;208m",
+            work: "\x1b[1m\x1b[38;2;235;203;139m",
+            ok: "\x1b[38;2;163;190;140m",
+            warn: "\x1b[1m\x1b[38;2;235;203;139m",
+            danger: "\x1b[1m\x1b[38;2;191;97;106m",
+            git: "\x1b[38;2;180;142;173m",
+            muted: "\x1b[38;2;76;86;106m",
+        },
+        Theme::Gruvbox => ColorPalette {
+            app: "\x1b[1m\x1b[38;2;184;187;38m",
+            info: "\x1b[38;2;142;192;124m",
+            work: "\x1b[1m\x1b[38;2;250;189;47m",
+            ok: "\x1b[38;2;184;187;38m",
+            warn: "\x1b[1m\x1b[38;2;250;189;47m",
+            danger: "\x1b[1m\x1b[38;2;251;73;52m",
+            git: "\x1b[38;2;211;134;155m",
+            muted: "\x1b[38;2;146;131;116m",
+        },
+        Theme::RosePine => ColorPalette {
+            app: "\x1b[1m\x1b[38;2;156;207;216m",
+            info: "\x1b[38;2;235;188;186m",
+            work: "\x1b[1m\x1b[38;2;246;193;119m",
+            ok: "\x1b[38;2;156;207;216m",
+            warn: "\x1b[1m\x1b[38;2;246;193;119m",
+            danger: "\x1b[1m\x1b[38;2;235;111;146m",
+            git: "\x1b[38;2;196;167;231m",
+            muted: "\x1b[38;2;110;106;134m",
+        },
+        _ => return None,
+    })
+}
+
+fn palette_segment(
+    palette: ColorPalette,
+    segment: Segment,
+    snapshot: &StatusSnapshot,
+) -> &'static str {
+    match segment {
+        Segment::App => palette.app,
+        Segment::Model
+        | Segment::Reasoning
+        | Segment::Agents
+        | Segment::AgentCount
+        | Segment::Tools
+        | Segment::Tokens
+        | Segment::InputTokens
+        | Segment::CachedTokens
+        | Segment::OutputTokens => palette.info,
+        Segment::Work => palette.work,
+        Segment::Context | Segment::ContextRemaining | Segment::ContextUsed => {
+            match snapshot.context_percent.unwrap_or(0) {
+                80..=u8::MAX => palette.danger,
+                60..=79 => palette.warn,
+                _ => palette.ok,
+            }
+        }
+        Segment::RateLimits
+        | Segment::FiveHourLimit
+        | Segment::WeeklyLimit
+        | Segment::ResetCredits => palette.warn,
+        Segment::Git
+        | Segment::GitDirty
+        | Segment::GitStaged
+        | Segment::GitModified
+        | Segment::GitSync
+        | Segment::Worktree
+        | Segment::ProjectRoot
+        | Segment::Plan
+        | Segment::Compactions => palette.git,
+        Segment::Safety => palette.danger,
+        Segment::Elapsed
+        | Segment::Cwd
+        | Segment::ContextWindow
+        | Segment::SessionId
+        | Segment::Status
+        | Segment::HooksHealth
+        | Segment::AppServerHealth => palette.muted,
     }
 }
 
@@ -1057,6 +1199,9 @@ fn theme_segment(theme: Theme, segment: Segment, snapshot: &StatusSnapshot) -> &
             | Segment::HooksHealth
             | Segment::AppServerHealth => "\x1b[38;2;157;234;246m",
         };
+    }
+    if let Some(palette) = color_palette(theme) {
+        return palette_segment(palette, segment, snapshot);
     }
     let dark = matches!(theme, Theme::CodexDark);
     match segment {
@@ -1253,6 +1398,26 @@ mod tests {
         .unwrap();
         assert!(!ox96f.contains("\x1b[48;"));
         assert!(ox96f.contains("\x1b[38;2;0;205;232m"));
+
+        for (theme, signature) in [
+            (Theme::TokyoNight, "\x1b[38;2;125;207;255m"),
+            (Theme::CatppuccinMocha, "\x1b[38;2;116;199;236m"),
+            (Theme::Dracula, "\x1b[38;2;139;233;253m"),
+            (Theme::Nord, "\x1b[38;2;136;192;208m"),
+            (Theme::Gruvbox, "\x1b[38;2;142;192;124m"),
+            (Theme::RosePine, "\x1b[38;2;235;188;186m"),
+        ] {
+            let preview = preview_ansi(
+                100,
+                &DisplayConfig {
+                    theme,
+                    ..DisplayConfig::default()
+                },
+            )
+            .unwrap();
+            assert!(!preview.contains("\x1b[48;"));
+            assert!(preview.contains(signature));
+        }
 
         let fixed_dark = preview_ansi(
             100,

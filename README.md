@@ -175,7 +175,7 @@ The prototype bottom dock supports configurable segment order and visibility in
 
 ```toml
 [display]
-theme = "ox96f" # transparent 0x96f neon palette; "inherit" uses terminal colors
+theme = "tokyo-night" # transparent; "inherit" uses terminal colors
 glyphs = "unicode"
 refresh_hz = 8
 rows = 3
@@ -192,8 +192,10 @@ Available segments are `app`, `model`, `work`, `context`, `tokens`,
 `tools`, `agents`, `plan`, `compactions`, `safety`, `elapsed`, `cwd`, and
 `status`. Remove a name to hide it or reorder the array to move it. `inherit`
 maps semantic colors through the terminal palette. `ox96f` uses the high-contrast
-cyan, green, yellow, violet, and red 0x96f palette. Both remain transparent; the
-fixed `codex-dark` and `codex-light` themes paint their own backgrounds.
+cyan, green, yellow, violet, and red 0x96f palette. Transparent built-ins also
+include `tokyo-night`, `catppuccin-mocha`, `dracula`, `nord`, `gruvbox`, and
+`rose-pine`. Only the explicitly selected `codex-dark` and `codex-light` themes
+paint their own backgrounds.
 `preview` uses clearly labelled simulated state to demonstrate the responsive
 layout.
 

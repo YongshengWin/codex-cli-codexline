@@ -165,6 +165,12 @@ pub enum Theme {
     #[default]
     Inherit,
     Ox96f,
+    TokyoNight,
+    CatppuccinMocha,
+    Dracula,
+    Nord,
+    Gruvbox,
+    RosePine,
     CodexDark,
     CodexLight,
     Minimal,

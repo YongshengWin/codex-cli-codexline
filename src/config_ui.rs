@@ -126,7 +126,7 @@ impl Editor {
             Page::Launch => 2,
             Page::Preset => 4,
             Page::Modules => module_choices(self.module_category).len(),
-            Page::Appearance => 11,
+            Page::Appearance => theme_choices().len() + 5,
             Page::Sources => 3,
             Page::Review => 2,
         }
@@ -229,18 +229,24 @@ impl Editor {
                     self.config.display.segments.push(segment);
                 }
             }
-            Page::Appearance => match self.cursor {
-                0 => self.config.display.theme = Theme::Inherit,
-                1 => self.config.display.theme = Theme::Ox96f,
-                2 => self.config.display.theme = Theme::CodexDark,
-                3 => self.config.display.theme = Theme::CodexLight,
-                4 => self.config.display.theme = Theme::Minimal,
-                5 => self.config.display.theme = Theme::Mono,
-                6 => self.config.display.glyphs = Glyphs::Unicode,
-                7 => self.config.display.glyphs = Glyphs::Ascii,
-                8..=10 => self.config.display.rows = (self.cursor - 7) as u8,
-                _ => unreachable!(),
-            },
+            Page::Appearance => {
+                let theme_count = theme_choices().len();
+                match self.cursor {
+                    cursor if cursor < theme_count => {
+                        self.config.display.theme = theme_choices()[cursor].0;
+                    }
+                    cursor if cursor == theme_count => {
+                        self.config.display.glyphs = Glyphs::Unicode;
+                    }
+                    cursor if cursor == theme_count + 1 => {
+                        self.config.display.glyphs = Glyphs::Ascii;
+                    }
+                    cursor if cursor <= theme_count + 4 => {
+                        self.config.display.rows = (cursor - theme_count - 1) as u8;
+                    }
+                    _ => unreachable!(),
+                }
+            }
             Page::Sources => apply_source_preset(&mut self.config.sources, self.cursor),
             Page::Review if self.cursor == 0 => {
                 self.config.validate()?;
@@ -248,7 +254,7 @@ impl Editor {
             }
             Page::Review => return Ok(Outcome::Cancel),
         }
-        self.message = "Selection updated · S saves · Esc cancels".into();
+        self.message = "Selection updated · Enter saves · Esc cancels".into();
         Ok(Outcome::Continue)
     }
 
@@ -623,16 +629,9 @@ fn option_lines(editor: &Editor) -> Vec<(String, bool)> {
             })
             .collect(),
         Page::Appearance => {
-            let themes = [
-                (Theme::Inherit, "Theme · Inherit terminal"),
-                (Theme::Ox96f, "Theme · 0x96f Neon"),
-                (Theme::CodexDark, "Theme · Codex Dark"),
-                (Theme::CodexLight, "Theme · Codex Light"),
-                (Theme::Minimal, "Theme · Minimal"),
-                (Theme::Mono, "Theme · Mono"),
-            ];
-            let mut lines = themes
-                .into_iter()
+            let mut lines = theme_choices()
+                .iter()
+                .copied()
                 .map(|(theme, label)| {
                     (
                         format!("( ) {label}"),
@@ -853,11 +852,37 @@ fn theme_index(theme: Theme) -> usize {
     match theme {
         Theme::Inherit => 0,
         Theme::Ox96f => 1,
-        Theme::CodexDark => 2,
-        Theme::CodexLight => 3,
-        Theme::Minimal => 4,
-        Theme::Mono => 5,
+        Theme::TokyoNight => 2,
+        Theme::CatppuccinMocha => 3,
+        Theme::Dracula => 4,
+        Theme::Nord => 5,
+        Theme::Gruvbox => 6,
+        Theme::RosePine => 7,
+        Theme::CodexDark => 8,
+        Theme::CodexLight => 9,
+        Theme::Minimal => 10,
+        Theme::Mono => 11,
     }
+}
+
+fn theme_choices() -> &'static [(Theme, &'static str)] {
+    &[
+        (Theme::Inherit, "Theme · Inherit terminal"),
+        (Theme::Ox96f, "Theme · 0x96f Neon · transparent"),
+        (Theme::TokyoNight, "Theme · Tokyo Night · transparent"),
+        (
+            Theme::CatppuccinMocha,
+            "Theme · Catppuccin Mocha · transparent",
+        ),
+        (Theme::Dracula, "Theme · Dracula · transparent"),
+        (Theme::Nord, "Theme · Nord · transparent"),
+        (Theme::Gruvbox, "Theme · Gruvbox · transparent"),
+        (Theme::RosePine, "Theme · Rosé Pine · transparent"),
+        (Theme::CodexDark, "Theme · Codex Dark · fixed background"),
+        (Theme::CodexLight, "Theme · Codex Light · fixed background"),
+        (Theme::Minimal, "Theme · Minimal"),
+        (Theme::Mono, "Theme · Mono"),
+    ]
 }
 
 fn truncate(value: &str, width: usize) -> String {

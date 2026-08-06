@@ -22,7 +22,26 @@
 Codexline 在 PTY/ConPTY 中启动官方 Codex CLI，并在终端底部绘制自己的响应式 HUD。
 它不修改、不替换 Codex，不抓取 TUI 文本，也不要求使用 tmux。
 
-## 核心能力
+## 目录
+
+1. [核心能力](#1-核心能力)
+2. [界面截图](#2-界面截图)
+3. [环境要求](#3-环境要求)
+4. [安装](#4-安装)
+5. [配置与启动](#5-配置与启动)
+6. [配置界面](#6-配置界面)
+7. [主题](#7-主题)
+8. [子代理查看](#8-子代理查看)
+9. [可选 Hooks 集成](#9-可选-hooks-集成)
+10. [数据来源](#10-数据来源)
+11. [工作原理](#11-工作原理)
+12. [兼容性与当前限制](#12-兼容性与当前限制)
+13. [隐私与安全](#13-隐私与安全)
+14. [开发者与编码代理](#14-开发者与编码代理)
+15. [参与贡献](#15-参与贡献)
+16. [许可证](#16-许可证)
+
+## 1. 核心能力
 
 - 模型、推理等级、运行状态、当前工具和耗时
 - 上下文压力、Token 计数、5 小时与周额度
@@ -35,15 +54,15 @@ Codexline 在 PTY/ConPTY 中启动官方 Codex CLI，并在终端底部绘制自
 
 未知数据会被隐藏，不会显示成具有误导性的零值。
 
-## 界面截图
+## 2. 界面截图
 
-### 实时 HUD
+### 2.1 实时 HUD
 
 <p align="center">
   <img src="assets/hero.svg" alt="Codexline 实时 HUD 界面示例" width="100%" />
 </p>
 
-### 可视化配置
+### 2.2 可视化配置
 
 <p align="center">
   <img src="assets/config-current.svg" alt="Codexline 可视化配置界面示例" width="100%" />
@@ -52,7 +71,7 @@ Codexline 在 PTY/ConPTY 中启动官方 Codex CLI，并在终端底部绘制自
 以上为界面示意截图。实际颜色和模块数量取决于主题、终端宽度以及 Codex 当前可提供
 的数据。
 
-## 环境要求
+## 3. 环境要求
 
 安装 Codexline 前，请先安装并登录官方 Codex CLI，确保 `codex` 命令位于 `PATH`。
 最新安装说明请以 [Codex 官方仓库](https://github.com/openai/codex)为准。
@@ -65,9 +84,9 @@ Codexline 在 PTY/ConPTY 中启动官方 Codex CLI，并在终端底部绘制自
 
 预编译和签名二进制将在后续提供。当前 Alpha 版本从源码安装。
 
-## 安装
+## 4. 安装
 
-### macOS
+### 4.1 macOS
 
 尚未安装 Rust 时，执行：
 
@@ -83,7 +102,7 @@ codexline doctor
 如果终端暂时找不到 `cargo` 或 `codexline`，请重启终端。Cargo 默认将命令安装到
 `~/.cargo/bin`。
 
-### Linux
+### 4.2 Linux
 
 先安装编译工具链。Debian/Ubuntu 示例：
 
@@ -99,7 +118,7 @@ codexline doctor
 
 Fedora、Arch 等发行版请先安装对应的 C 编译器、链接器、Git 和 Rust 软件包。
 
-### Windows 10/11
+### 4.3 Windows 10/11
 
 先安装官方 Codex CLI、Git、Rustup 和 Microsoft C++ Build Tools，然后在
 PowerShell 中执行：
@@ -115,12 +134,12 @@ Windows 上的程序文件是 `codexline.exe`，通常位于
 `%USERPROFILE%\.cargo\bin`。原生 Windows 使用 ConPTY 和 Virtual Terminal。
 在更多机器完成终端恢复与信号测试前，Windows 支持仍标记为 Alpha。
 
-### WSL
+### 4.4 WSL
 
 请在同一个 WSL 发行版内安装 Codex 和 Codexline，并按照上面的 Linux 步骤操作；
 不要在 Linux Shell 中直接复用 Windows 的 `.exe`。
 
-### 仓库公开后的直接安装方式
+### 4.5 仓库公开后的直接安装方式
 
 不需要保留源码副本时可以执行：
 
@@ -128,7 +147,7 @@ Windows 上的程序文件是 `codexline.exe`，通常位于
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
 ```
 
-## 配置与启动
+## 5. 配置与启动
 
 正常首次使用流程：
 
@@ -166,7 +185,7 @@ HUD 的官方 Codex 行为。
 > 配置界面目前可以记录未来的“继续输入 `codex`”shim 模式，但 Alpha 版本尚不会
 > 安装该 shim。在 `codexline setup` 完成前，请使用 `codexline` 启动交互会话。
 
-## 配置界面
+## 6. 配置界面
 
 执行 `codexline config`。保存前，所有修改都只存在于临时配置中。
 
@@ -200,7 +219,7 @@ codexline config
 | 设置了 `XDG_CONFIG_HOME` 的 Unix | `$XDG_CONFIG_HOME/codexline/config.toml` |
 | Windows | 以 `codexline doctor` 输出为准；通常为 `%APPDATA%\codexline\codexline\config\config.toml` |
 
-## 主题
+## 7. 主题
 
 以下透明主题会保留终端原有背景：
 
@@ -216,7 +235,7 @@ codexline config
 Codex Dark 和 Codex Light 使用固定背景；Minimal 和 Mono 提供简化样式。进入
 `codexline config` 的 **Appearance** 页面即可切换并实时预览。
 
-## 子代理查看
+## 8. 子代理查看
 
 Codex 提供子代理状态时，Codexline 会在主 HUD 下方展开 Agent Inspector，并显示
 `Ctrl+G focus` 操作提示：
@@ -228,7 +247,7 @@ Codex 提供子代理状态时，Codexline 会在主 HUD 下方展开 Agent Insp
 
 当前 Codex 集成无法提供的字段会自动隐藏。
 
-## 可选 Hooks 集成
+## 9. 可选 Hooks 集成
 
 仓库内置的 `codexline-events` 插件可以提供工具、代理、计划、权限和压缩事件。克隆
 仓库后执行：
@@ -248,7 +267,7 @@ codex plugin add codexline-events@codexline-local
 在新的 Codex 会话中使用 `/hooks` 检查并信任命令。Codexline 未运行时，适配器不会
 执行数据转发。
 
-## 数据来源
+## 10. 数据来源
 
 Codexline 合并三个有边界的数据来源：
 
@@ -260,7 +279,7 @@ Codexline 合并三个有边界的数据来源：
 `remote_proxy = true` 属于实验功能；连接建立后若代理断开，可能终止交互式 TUI，
 因此默认关闭。
 
-## 工作原理
+## 11. 工作原理
 
 ```mermaid
 flowchart LR
@@ -280,7 +299,7 @@ Codexline 从子终端高度中预留 HUD 行，以字节流转发 Codex 输出�
 转发热路径。它只在伴生进程内部关闭 Codex 原生 footer；用户显式传入的
 `-c tui.status_line=...` 配置仍具有最高优先级。
 
-## 兼容性与当前限制
+## 12. 兼容性与当前限制
 
 | 环境 | 后端 | 当前验证程度 |
 | --- | --- | --- |
@@ -297,7 +316,7 @@ Codexline 从子终端高度中预留 HUD 行，以字节流转发 Codex 输出�
 - 稳定渲染方式目前是底部 dock；跟随输入框的 attached 布局仍是实验方向。
 - 丰富实时字段取决于已安装 Codex 版本暴露的能力以及可选 Hooks 集成。
 
-## 隐私与安全
+## 13. 隐私与安全
 
 - 不收集提示词、回复、会话记录、命令输出或文件内容。
 - 不解析 Codex 私有 SQLite 或 rollout 格式。
@@ -306,7 +325,7 @@ Codexline 从子终端高度中预留 HUD 行，以字节流转发 Codex 输出�
 - 集成消息仅在本机传递，具有大小边界并限定到当前会话。
 - PTY 接管前发生故障时会直接降级到官方 Codex。
 
-## 开发者与编码代理
+## 14. 开发者与编码代理
 
 开始工作前按顺序阅读：
 
@@ -326,11 +345,11 @@ cargo build --release
 文档必须明确区分已实现功能、未来设计和真实平台验证。禁止 patch Codex、抓取终端
 文本或读取私有会话记录。
 
-## 参与贡献
+## 15. 参与贡献
 
 欢迎提交 Issue 和 Pull Request。修改 PTY 所有权、公开配置、插件协议、更新信任链
 或状态 schema 前，请先建立 Issue。PR 应说明测试平台、降级行为、安全影响和验证命令。
 
-## 许可证
+## 16. 许可证
 
 MIT，详见 [`LICENSE`](LICENSE)。

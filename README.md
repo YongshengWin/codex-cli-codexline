@@ -25,7 +25,26 @@ Codexline launches the official Codex CLI inside a PTY/ConPTY and renders its
 own responsive HUD at the bottom of the terminal. It does not patch Codex,
 replace Codex, scrape the TUI, or require tmux.
 
-## Highlights
+## Contents
+
+1. [Highlights](#1-highlights)
+2. [Screenshots](#2-screenshots)
+3. [Requirements](#3-requirements)
+4. [Install](#4-install)
+5. [Configure and run](#5-configure-and-run)
+6. [Configuration UI](#6-configuration-ui)
+7. [Themes](#7-themes)
+8. [Live agents](#8-live-agents)
+9. [Optional Hooks integration](#9-optional-hooks-integration)
+10. [Data sources](#10-data-sources)
+11. [How it works](#11-how-it-works)
+12. [Compatibility and current limits](#12-compatibility-and-current-limits)
+13. [Privacy and safety](#13-privacy-and-safety)
+14. [Development and coding agents](#14-development-and-coding-agents)
+15. [Contributing](#15-contributing)
+16. [License](#16-license)
+
+## 1. Highlights
 
 - Model, reasoning, run state, active tools and elapsed time
 - Context pressure, token counters, 5-hour and weekly usage limits
@@ -38,15 +57,15 @@ replace Codex, scrape the TUI, or require tmux.
 
 Unknown values are hidden instead of being displayed as misleading zeroes.
 
-## Screenshots
+## 2. Screenshots
 
-### Live HUD
+### 2.1 Live HUD
 
 <p align="center">
   <img src="assets/hero.svg" alt="Codexline live HUD interface example" width="100%" />
 </p>
 
-### Visual configuration
+### 2.2 Visual configuration
 
 <p align="center">
   <img src="assets/config-current.svg" alt="Codexline visual configuration example" width="100%" />
@@ -55,7 +74,7 @@ Unknown values are hidden instead of being displayed as misleading zeroes.
 The screenshots are illustrated interface examples. Colors and visible modules
 depend on the selected theme, terminal width and data available from Codex.
 
-## Requirements
+## 3. Requirements
 
 Before installing Codexline, install and authenticate the official Codex CLI.
 The `codex` executable must be available on `PATH`. Follow the current
@@ -70,9 +89,9 @@ Building from source currently requires:
 Prebuilt and signed binaries are planned. The current alpha installs from
 source.
 
-## Install
+## 4. Install
 
-### macOS
+### 4.1 macOS
 
 Install Rust if necessary, then build and install Codexline:
 
@@ -88,7 +107,7 @@ codexline doctor
 Restart the terminal if `cargo` or `codexline` is not immediately found.
 Cargo normally installs commands into `~/.cargo/bin`.
 
-### Linux
+### 4.2 Linux
 
 Install a compiler toolchain first. Debian and Ubuntu example:
 
@@ -105,7 +124,7 @@ codexline doctor
 On Fedora, Arch or another distribution, install the equivalent C compiler,
 linker, Git and Rust packages before running `cargo install`.
 
-### Windows 10/11
+### 4.3 Windows 10/11
 
 Install the official Codex CLI, Git, Rustup and the Microsoft C++ Build Tools.
 Then run in PowerShell:
@@ -122,12 +141,12 @@ The installed program is `codexline.exe`, usually under
 sequences. Windows support is alpha until the terminal recovery and signal
 matrix has been manually verified on more machines.
 
-### WSL
+### 4.4 WSL
 
 Install Codex and Codexline inside the same WSL distribution. Follow the Linux
 steps above; do not reuse the Windows `.exe` from the Linux shell.
 
-### Install directly after the repository is public
+### 4.5 Install directly after the repository is public
 
 Users who do not need a local clone can run:
 
@@ -135,7 +154,7 @@ Users who do not need a local clone can run:
 cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
 ```
 
-## Configure and run
+## 5. Configure and run
 
 The normal first-run sequence is:
 
@@ -175,7 +194,7 @@ bypass automatically use direct Codex behavior without the overlay.
 > but this alpha does not install that shim yet. Until `codexline setup` lands,
 > launch interactive sessions with `codexline`.
 
-## Configuration UI
+## 6. Configuration UI
 
 Run `codexline config`. Changes remain staged until saved.
 
@@ -209,7 +228,7 @@ Configuration paths:
 | Unix with `XDG_CONFIG_HOME` | `$XDG_CONFIG_HOME/codexline/config.toml` |
 | Windows | Printed by `codexline doctor`; normally `%APPDATA%\codexline\codexline\config\config.toml` |
 
-## Themes
+## 7. Themes
 
 Transparent themes preserve the terminal background:
 
@@ -226,7 +245,7 @@ Codex Dark and Codex Light use fixed backgrounds. Minimal and Mono provide
 reduced styling. Select and preview every theme from **Appearance** in
 `codexline config`.
 
-## Live agents
+## 8. Live agents
 
 When Codex exposes active subagents, Codexline expands an Agent Inspector below
 the main HUD. The HUD displays a visible `Ctrl+G focus` action:
@@ -238,7 +257,7 @@ the main HUD. The HUD displays a visible `Ctrl+G focus` action:
 
 Fields unavailable from the current Codex integration are omitted.
 
-## Optional Hooks integration
+## 9. Optional Hooks integration
 
 The bundled `codexline-events` plugin supplies tool, agent, plan, approval and
 compaction events. From a cloned repository:
@@ -258,7 +277,7 @@ codex plugin add codexline-events@codexline-local
 Review and trust the commands through `/hooks` in a new Codex session. The
 adapter is inert when Codexline is not running.
 
-## Data sources
+## 10. Data sources
 
 Codexline combines three bounded sources:
 
@@ -270,7 +289,7 @@ The default `safe sidecar` mode does not put a proxy between the TUI and Codex.
 `remote_proxy = true` is experimental and can terminate the interactive TUI if
 an established proxy connection disconnects. It is disabled by default.
 
-## How it works
+## 11. How it works
 
 ```mermaid
 flowchart LR
@@ -291,7 +310,7 @@ as bytes and keeps rendering work away from the relay path. It disables the
 native Codex footer only for the companion-managed process. An explicit user
 `-c tui.status_line=...` override remains authoritative.
 
-## Compatibility and current limits
+## 12. Compatibility and current limits
 
 | Environment | Backend | Current confidence |
 | --- | --- | --- |
@@ -311,7 +330,7 @@ Current alpha limitations:
 - Rich live fields depend on the capabilities exposed by the installed Codex
   version and optional Hooks integration.
 
-## Privacy and safety
+## 13. Privacy and safety
 
 - No prompt, response, transcript, command output or file-content collection.
 - No private Codex SQLite or rollout format parsing.
@@ -320,7 +339,7 @@ Current alpha limitations:
 - Integration messages are local, bounded and scoped to the current session.
 - Failures before PTY ownership fall back to direct Codex execution.
 
-## Development and coding agents
+## 14. Development and coding agents
 
 Start with these documents:
 
@@ -342,13 +361,13 @@ cargo build --release
 Keep implemented behavior, proposals and platform verification clearly
 separated. Do not patch Codex, scrape terminal text or read private transcripts.
 
-## Contributing
+## 15. Contributing
 
 Issues and pull requests are welcome. Open an issue before changing PTY
 ownership, public configuration, plugin protocols, updater trust or state
 schemas. PRs should describe tested platforms, fallback behavior, security
 impact and verification commands.
 
-## License
+## 16. License
 
 MIT. See [`LICENSE`](LICENSE).

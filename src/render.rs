@@ -485,11 +485,17 @@ fn segment_text(
             .git_branch
             .as_ref()
             .map(|branch| git_text(branch, snapshot)),
-        Segment::Worktree => snapshot
-            .worktree
-            .as_ref()
-            .filter(|_| snapshot.linked_worktree == Some(true))
-            .map(|worktree| format!("wt:{} ↗", sanitize_dynamic(worktree))),
+        Segment::Worktree => snapshot.worktree.as_ref().map(|worktree| {
+            format!(
+                "WT {}{}",
+                sanitize_dynamic(worktree),
+                if snapshot.linked_worktree == Some(true) {
+                    " ↗"
+                } else {
+                    ""
+                }
+            )
+        }),
         Segment::Tools => tools_text(snapshot),
         Segment::Agents => agents_text(snapshot),
         Segment::Plan => match (snapshot.plan_completed, snapshot.plan_total) {
@@ -502,15 +508,15 @@ fn segment_text(
             .map(|count| format!("compact ×{count}")),
         Segment::Safety => snapshot.safety.as_deref().map(sanitize_dynamic),
         Segment::Elapsed => Some(format!("{elapsed}s")),
-        Segment::Cwd => Some(cwd.to_owned()),
+        Segment::Cwd => Some(format!("DIR {cwd}")),
         Segment::Status => Some(if snapshot.events_active && snapshot.app_server_active {
-            "hooks + app-server".into()
+            "H+A ✓".into()
         } else if snapshot.app_server_active {
-            "app-server live".into()
+            "APP ✓".into()
         } else if snapshot.events_active {
-            "hooks live".into()
+            "HOOK ✓".into()
         } else {
-            "local probes".into()
+            "LOCAL".into()
         }),
     }
 }
@@ -567,7 +573,7 @@ fn context_text(snapshot: &StatusSnapshot) -> Option<String> {
     let mut text = context_bar(percent);
     if let (Some(used), Some(window)) = (snapshot.context_used, snapshot.context_window) {
         text.push_str(&format!(
-            " · {}/{}",
+            " {}/{}",
             compact_number(used),
             compact_number(window)
         ));
@@ -606,12 +612,12 @@ fn rate_limits_text(snapshot: &StatusSnapshot) -> Option<String> {
             let reset = window
                 .resets_at
                 .and_then(reset_in)
-                .map(|value| format!(" · reset {value}"));
+                .map(|value| format!(" ↻{value}"));
             format!("{label} {left}%{}", reset.unwrap_or_default())
         })
         .collect::<Vec<_>>();
     if let Some(credits) = snapshot.reset_credits.filter(|value| *value > 0) {
-        parts.push(format!("+{credits} reset"));
+        parts.push(format!("+{credits}"));
     }
     (!parts.is_empty()).then(|| parts.join("  "))
 }
@@ -720,7 +726,7 @@ fn context_bar(percent: u8) -> String {
     let free = 100_u8.saturating_sub(percent);
     let filled = usize::from((free.saturating_add(10) / 20).min(5));
     format!(
-        "CTX {}{} {free}% free",
+        "CTX {}{} {free}%",
         "█".repeat(filled),
         "░".repeat(5 - filled)
     )
@@ -741,17 +747,17 @@ fn segment_priority(segment: Segment) -> u8 {
         Segment::RateLimits => 94,
         Segment::Tokens => 72,
         Segment::Model => 90,
-        Segment::Git => 85,
-        Segment::Worktree => 82,
+        Segment::Git => 93,
+        Segment::Worktree => 86,
         Segment::Tools => 78,
         Segment::App => 80,
         Segment::Agents => 70,
         Segment::Plan => 65,
         Segment::Compactions => 62,
-        Segment::Safety => 60,
+        Segment::Safety => 84,
         Segment::Elapsed => 50,
-        Segment::Cwd => 40,
-        Segment::Status => 10,
+        Segment::Cwd => 90,
+        Segment::Status => 89,
     }
 }
 
@@ -926,6 +932,14 @@ mod tests {
         let line = preview_line(120, &display);
         assert!(line.contains("8s :: ● Codex"));
         assert!(!line.contains("companion active"));
+    }
+
+    #[test]
+    fn full_layout_keeps_workspace_and_health_context_at_common_widths() {
+        let line = preview_line(90, &DisplayConfig::default());
+        assert!(line.contains("git:(feat/statusline*)"));
+        assert!(line.contains("DIR ~/pro/codex-cli-statusline"));
+        assert!(line.contains("H+A ✓"));
     }
 
     #[test]

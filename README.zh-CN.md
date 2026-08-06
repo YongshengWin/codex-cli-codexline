@@ -13,9 +13,10 @@
 </p>
 
 > [!IMPORTANT]
-> 当前仓库处于 **Alpha 阶段**。macOS 已在本机测试；Linux、Windows 10+ 和 WSL
-> 是 CI 覆盖的支持目标，但仍需要更广泛的真实终端测试。Codexline 是独立社区项目，
-> 与 OpenAI 不存在隶属或官方背书关系。
+> 当前仓库是 **v0.1 预览版**。macOS 主流程已经可用并在本机测试。采用保守的预览版
+> 标记，是因为 Linux/Windows/WSL 仍需更广泛的真实终端测试，自动 `codex` shim
+> 尚未完成，也还没有签名预编译发行包。Codexline 是独立社区项目，与 OpenAI 不存在
+> 隶属或官方背书关系。详见[兼容性与当前限制](#12-兼容性与当前限制)。
 
 `codex-cli-codexline` 是仓库名和软件包名，安装后的日常命令保持简洁：`codexline`。
 
@@ -76,31 +77,44 @@ Codexline 在 PTY/ConPTY 中启动官方 Codex CLI，并在终端底部绘制自
 安装 Codexline 前，请先安装并登录官方 Codex CLI，确保 `codex` 命令位于 `PATH`。
 最新安装说明请以 [Codex 官方仓库](https://github.com/openai/codex)为准。
 
-当前从源码安装还需要：
+安装当前预览版需要：
 
 - Git
 - Rust 1.85 或更高版本
 - 支持交互式 TTY 的终端
 
-预编译和签名二进制将在后续提供。当前 Alpha 版本从源码安装。
+预编译和签名二进制将在后续提供。当前预览版从源码安装。
 
 ## 4. 安装
 
 ### 4.1 macOS
 
-尚未安装 Rust 时，执行：
+如果已经安装 Rust，直接执行以下命令即可完成安装、配置和启动：
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+codexline config
+codexline doctor
+codexline
+```
+
+如果尚未安装 Rust：
 
 ```bash
 xcode-select --install
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/YongshengWin/codex-cli-codexline.git
-cd codex-cli-codexline
-cargo install --path . --locked
-codexline doctor
+source "$HOME/.cargo/env"
 ```
 
-如果终端暂时找不到 `cargo` 或 `codexline`，请重启终端。Cargo 默认将命令安装到
-`~/.cargo/bin`。
+然后再执行上面的一键安装命令。Cargo 默认将 `codexline` 安装到
+`~/.cargo/bin`；如果终端暂时找不到命令，请重启终端。
+
+已经下载了源码时，也可以从本地安装：
+
+```bash
+cd /path/to/codex-cli-codexline
+cargo install --path . --locked
+```
 
 ### 4.2 Linux
 
@@ -110,9 +124,8 @@ codexline doctor
 sudo apt update
 sudo apt install -y build-essential curl git pkg-config
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/YongshengWin/codex-cli-codexline.git
-cd codex-cli-codexline
-cargo install --path . --locked
+source "$HOME/.cargo/env"
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
 codexline doctor
 ```
 
@@ -124,27 +137,38 @@ Fedora、Arch 等发行版请先安装对应的 C 编译器、链接器、Git �
 PowerShell 中执行：
 
 ```powershell
-git clone https://github.com/YongshengWin/codex-cli-codexline.git
-Set-Location codex-cli-codexline
-cargo install --path . --locked
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
 codexline doctor
 ```
 
 Windows 上的程序文件是 `codexline.exe`，通常位于
 `%USERPROFILE%\.cargo\bin`。原生 Windows 使用 ConPTY 和 Virtual Terminal。
-在更多机器完成终端恢复与信号测试前，Windows 支持仍标记为 Alpha。
+在更多机器完成终端恢复与信号测试前，Windows 支持仍处于预览质量等级。
 
 ### 4.4 WSL
 
 请在同一个 WSL 发行版内安装 Codex 和 Codexline，并按照上面的 Linux 步骤操作；
 不要在 Linux Shell 中直接复用 Windows 的 `.exe`。
 
-### 4.5 仓库公开后的直接安装方式
+### 4.5 验证、更新与卸载
 
-不需要保留源码副本时可以执行：
+验证是否安装成功：
 
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+codexline --version
+codexline doctor
+```
+
+重新安装最新公开提交：
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+```
+
+卸载通过 Cargo 安装的软件包：
+
+```bash
+cargo uninstall codex-cli-codexline
 ```
 
 ## 5. 配置与启动
@@ -182,8 +206,9 @@ HUD 的官方 Codex 行为。
 | `codexline doctor` | 显示路径、Codex 发现、后端和数据源状态 |
 
 > [!NOTE]
-> 配置界面目前可以记录未来的“继续输入 `codex`”shim 模式，但 Alpha 版本尚不会
-> 安装该 shim。在 `codexline setup` 完成前，请使用 `codexline` 启动交互会话。
+> v0.1 请在 Launch 页面选择 **Use the explicit `codexline` command**。
+> **Keep the `codex` command** 目前只记录面向未来兼容的偏好，不会替换或安装任何
+> 文件。在 `codexline setup` 完成前，请使用 `codexline` 启动交互会话。
 
 ## 6. 配置界面
 
@@ -309,7 +334,7 @@ Codexline 从子终端高度中预留 HUD 行，以字节流转发 Codex 输出�
 | WSL | Linux PTY 后端 | 支持目标；真实终端矩阵待补 |
 | 非 TTY / CI / 管道 | 直接降级 | 已有自动化测试 |
 
-当前 Alpha 限制：
+仍标记为 v0.1 预览版的原因：
 
 - 尚无签名预编译二进制和包管理器安装源。
 - 尚未实现 `codexline setup`、自动 `codex` shim 安装和卸载。

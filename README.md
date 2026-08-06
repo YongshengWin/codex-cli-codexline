@@ -13,10 +13,12 @@
 </p>
 
 > [!IMPORTANT]
-> This repository is an **alpha**. macOS is locally tested. Linux, Windows 10+
-> and WSL are supported targets covered by CI, but still need broader manual
-> terminal testing. Codexline is an independent community project and is not
-> affiliated with or endorsed by OpenAI.
+> This repository is a **v0.1 preview**. The main macOS workflow is usable and
+> locally tested. The conservative preview label means that Linux/Windows/WSL
+> still need broader manual terminal testing, automatic `codex` shim setup is
+> not finished, and signed prebuilt releases are not available yet. Codexline
+> is an independent community project and is not affiliated with or endorsed
+> by OpenAI. See [Compatibility and current limits](#12-compatibility-and-current-limits).
 
 `codex-cli-codexline` is the repository and package name. The installed command
 is deliberately shorter: `codexline`.
@@ -80,32 +82,46 @@ Before installing Codexline, install and authenticate the official Codex CLI.
 The `codex` executable must be available on `PATH`. Follow the current
 instructions in the [official Codex repository](https://github.com/openai/codex).
 
-Building from source currently requires:
+Installing the current preview requires:
 
 - Git
 - Rust 1.85 or newer
 - A terminal with interactive TTY support
 
-Prebuilt and signed binaries are planned. The current alpha installs from
+Prebuilt and signed binaries are planned. The current preview installs from
 source.
 
 ## 4. Install
 
 ### 4.1 macOS
 
-Install Rust if necessary, then build and install Codexline:
+If Rust is already installed, install Codexline directly:
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+codexline config
+codexline doctor
+codexline
+```
+
+If Rust is not installed yet:
 
 ```bash
 xcode-select --install
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/YongshengWin/codex-cli-codexline.git
-cd codex-cli-codexline
-cargo install --path . --locked
-codexline doctor
+source "$HOME/.cargo/env"
 ```
 
-Restart the terminal if `cargo` or `codexline` is not immediately found.
-Cargo normally installs commands into `~/.cargo/bin`.
+Then run the direct installation command above. Cargo normally installs
+`codexline` into `~/.cargo/bin`. Restart the terminal if the command is not
+immediately found.
+
+To install from an existing local clone instead:
+
+```bash
+cd /path/to/codex-cli-codexline
+cargo install --path . --locked
+```
 
 ### 4.2 Linux
 
@@ -115,9 +131,8 @@ Install a compiler toolchain first. Debian and Ubuntu example:
 sudo apt update
 sudo apt install -y build-essential curl git pkg-config
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-git clone https://github.com/YongshengWin/codex-cli-codexline.git
-cd codex-cli-codexline
-cargo install --path . --locked
+source "$HOME/.cargo/env"
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
 codexline doctor
 ```
 
@@ -130,28 +145,39 @@ Install the official Codex CLI, Git, Rustup and the Microsoft C++ Build Tools.
 Then run in PowerShell:
 
 ```powershell
-git clone https://github.com/YongshengWin/codex-cli-codexline.git
-Set-Location codex-cli-codexline
-cargo install --path . --locked
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
 codexline doctor
 ```
 
 The installed program is `codexline.exe`, usually under
 `%USERPROFILE%\.cargo\bin`. Native Windows uses ConPTY and Virtual Terminal
-sequences. Windows support is alpha until the terminal recovery and signal
-matrix has been manually verified on more machines.
+sequences. Windows support remains preview-quality until the terminal recovery
+and signal matrix has been manually verified on more machines.
 
 ### 4.4 WSL
 
 Install Codex and Codexline inside the same WSL distribution. Follow the Linux
 steps above; do not reuse the Windows `.exe` from the Linux shell.
 
-### 4.5 Install directly after the repository is public
+### 4.5 Verify, update and remove
 
-Users who do not need a local clone can run:
+Verify the installed command:
 
 ```bash
-cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline
+codexline --version
+codexline doctor
+```
+
+Install the newest published commit again:
+
+```bash
+cargo install --git https://github.com/YongshengWin/codex-cli-codexline --locked --bin codexline --force
+```
+
+Remove the Cargo-installed package:
+
+```bash
+cargo uninstall codex-cli-codexline
 ```
 
 ## 5. Configure and run
@@ -190,9 +216,10 @@ bypass automatically use direct Codex behavior without the overlay.
 | `codexline doctor` | Show paths, Codex discovery, backend and data-source status |
 
 > [!NOTE]
-> The configuration UI can record the future “keep typing `codex`” shim mode,
-> but this alpha does not install that shim yet. Until `codexline setup` lands,
-> launch interactive sessions with `codexline`.
+> For v0.1, select **Use the explicit `codexline` command** on the Launch page.
+> The **Keep the `codex` command** option currently records a forward-compatible
+> preference only; it does not replace or install anything. Until
+> `codexline setup` lands, launch interactive sessions with `codexline`.
 
 ## 6. Configuration UI
 
@@ -320,7 +347,7 @@ native Codex footer only for the companion-managed process. An explicit user
 | WSL | Linux PTY backend | Target; manual matrix pending |
 | Non-TTY / CI / pipes | Direct fallback | Automated tests |
 
-Current alpha limitations:
+Why this is still a v0.1 preview:
 
 - No signed prebuilt binaries or package-manager formulae yet.
 - `codexline setup`, automatic `codex` shim installation and uninstall are not
